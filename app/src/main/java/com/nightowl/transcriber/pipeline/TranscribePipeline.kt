@@ -93,6 +93,10 @@ class TranscribePipeline(private val context: Context) {
         val startedAt = System.currentTimeMillis()
         val accumulated = ArrayList<Segment>()
         var skippedSegments = 0
+        // ✦ 音频通路统计：0 字排查用（总样本/峰值/块数）
+        var fedChunks = 0
+        var fedSamples = 0L
+        var peakAmp = 0f
 
         // ✦ 明确告知用户当前处于"加载模型"阶段（首次加载需数秒，不是卡死）
         TranscribeBus.status.value = Status.Preparing
@@ -100,7 +104,14 @@ class TranscribePipeline(private val context: Context) {
 
         /** 识别一个语段并流式追加（空结果计数，不中断流水线） */
         fun handleSegment(seg: com.nightowl.transcriber.engine.VadSegment) {
+            val segMs = seg.samples.size * 1000L / 16000
             val text = engine.transcribe(seg.samples)
+            if (accumulated.size + skippedSegments < 5) {
+                com.nightowl.transcriber.diag.OTLog.i(
+                    "OTDiag",
+                    "seg#${accumulated.size + skippedSegments} len=${segMs}ms peak=${seg.samples.maxOrNull()?.let { kotlin.math.abs(it) } ?: 0f} text='${text.take(40)}'"
+                )
+            }
             if (text.isNotBlank()) {
                 // 绝对时间来自 VAD 内部维护的样本偏移，精确到帧
                 val startMs = seg.startSample * 1000L / 16000
@@ -131,6 +142,13 @@ class TranscribePipeline(private val context: Context) {
                 onChunk = { chunk ->
                     if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@extract
 
+                    fedChunks++
+                    fedSamples += chunk.size
+                    if (chunk.isNotEmpty()) {
+                        val p = chunk.maxOf { kotlin.math.abs(it) }
+                        if (p > peakAmp) peakAmp = p
+                    }
+
                     // 喂 VAD：按窗口切片（尾帧不足窗口时丢弃，<32ms 无影响）
                     var offset = 0
                     while (offset + vad.windowSize <= chunk.size) {
@@ -148,6 +166,11 @@ class TranscribePipeline(private val context: Context) {
             for (seg in vad.flush()) {
                 handleSegment(seg)
             }
+
+            com.nightowl.transcriber.diag.OTLog.i(
+                "OTDiag",
+                "decode done: chunks=$fedChunks totalSamples=$fedSamples≈${fedSamples / 16000}s peak=$peakAmp segs=${accumulated.size} skipped=$skippedSegments"
+            )
 
             if (TranscribeBus.cancelRequested) {
                 TranscribeBus.status.value = Status.Cancelled
