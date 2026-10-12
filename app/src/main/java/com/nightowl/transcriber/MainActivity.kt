@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity() {
                             title = fileName.ifBlank { "转写结果" },
                             initialText = resultText,
                             segments = segments,
-                            elapsedText = TranscribeBus.progressText.collectAsState(initial = "").value,
+                            elapsedText = TranscribeBus.elapsedText.collectAsState(initial = "").value,
                             savePath = latest?.savePath ?: "未记录",
                             format = ExportFormat.from(styleCode),
                             onBack = { screen = Screen.HOME }
