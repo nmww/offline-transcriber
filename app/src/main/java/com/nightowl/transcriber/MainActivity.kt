@@ -144,6 +144,11 @@ class MainActivity : ComponentActivity() {
             if (status is Status.Done && screen == Screen.WORKING) screen = Screen.RESULT
         }
 
+        // ✦ 系统返回键接入：非首页时返回 = 回首页（而不是退出 App）
+        androidx.activity.compose.BackHandler(enabled = screen != Screen.HOME) {
+            screen = Screen.HOME
+        }
+
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Crossfade(targetState = screen, label = "screen") { target ->
                 when (target) {
