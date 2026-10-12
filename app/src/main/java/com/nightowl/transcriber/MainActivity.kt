@@ -144,6 +144,14 @@ class MainActivity : ComponentActivity() {
             if (status is Status.Done && screen == Screen.WORKING) screen = Screen.RESULT
         }
 
+        // 进程重建后从通知点回 App：任务仍在跑 → 直接回到转写页（否则在首页看进度卡）
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            val st = TranscribeBus.status.value
+            if ((st is Status.Preparing || st is Status.Running) && screen == Screen.HOME) {
+                screen = Screen.WORKING
+            }
+        }
+
         // ✦ 系统返回键接入：非首页时返回 = 回首页（而不是退出 App）
         androidx.activity.compose.BackHandler(enabled = screen != Screen.HOME) {
             screen = Screen.HOME
@@ -163,7 +171,9 @@ class MainActivity : ComponentActivity() {
                                 listOf(com.nightowl.transcriber.engine.Segment(0, item.text, 0, item.durationMs))
                             TranscribeBus.status.value = Status.Done
                             screen = Screen.RESULT
-                        }
+                        },
+                        onOpenTask = { screen = Screen.WORKING },
+                        onCancelTask = { TranscribeService.stop(this) }
                     )
                     Screen.WORKING -> TranscribingScreen(
                         onCancel = {
