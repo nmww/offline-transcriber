@@ -124,6 +124,7 @@ fun ResultScreen(
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             val btnShape = RoundedCornerShape(14.dp)
             val btnHeight = Modifier.height(48.dp)
+            val base = title.substringBeforeLast('.')
             Button(
                 onClick = { copyText(context, text) },
                 modifier = Modifier.weight(1f).then(btnHeight),
@@ -131,13 +132,14 @@ fun ResultScreen(
             ) { Text("复制") }
             Spacer(modifier = Modifier.size(12.dp))
             OutlinedButton(
-                onClick = { shareText(context, Exporter.format(segments, format)) },
+                // ✦ 真文件导出：落成 .txt 文件再分享，微信收到的是文件而非一坨文字
+                onClick = { shareFile(context, text, "$base.转写.txt") },
                 modifier = Modifier.weight(1f).then(btnHeight),
                 shape = btnShape
             ) { Text("导出 txt") }
             Spacer(modifier = Modifier.size(12.dp))
             OutlinedButton(
-                onClick = { shareText(context, Exporter.toSrt(segments)) },
+                onClick = { shareFile(context, Exporter.toSrt(segments), "$base.srt") },
                 modifier = Modifier.weight(1f).then(btnHeight),
                 shape = btnShape
             ) { Text("字幕 srt") }
@@ -152,7 +154,24 @@ private fun copyText(context: Context, s: String) {
     Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
 }
 
-private fun shareText(context: Context, s: String) {
-    val i = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, s) }
-    context.startActivity(Intent.createChooser(i, "导出转写结果"))
+/** 把内容写成真实文件（cacheDir/exports/），经 FileProvider 分享——微信收到的就是文件 */
+private fun shareFile(context: Context, content: String, fileName: String) {
+    runCatching {
+        val dir = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
+        // 先清旧导出，避免 cache 无限膨胀
+        dir.listFiles()?.forEach { if (it.name != fileName) it.delete() }
+        val f = java.io.File(dir, fileName)
+        f.writeText(content)
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context, context.packageName + ".fileprovider", f
+        )
+        val i = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(i, "导出转写结果"))
+    }.onFailure {
+        Toast.makeText(context, "导出失败：${it.message}", Toast.LENGTH_SHORT).show()
+    }
 }
