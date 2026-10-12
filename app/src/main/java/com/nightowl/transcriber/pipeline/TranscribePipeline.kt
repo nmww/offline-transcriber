@@ -9,6 +9,7 @@ import com.nightowl.transcriber.engine.EnergyVadDetector
 import com.nightowl.transcriber.engine.ModelManager
 import com.nightowl.transcriber.engine.Segment
 import com.nightowl.transcriber.engine.VadDetector
+import com.nightowl.transcriber.engine.VadSegment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
