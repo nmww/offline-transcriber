@@ -238,6 +238,32 @@ fun SettingsScreen(
                 }
             )
         }
+
+        Spacer(modifier = Modifier.size(24.dp))
+
+        // ── 关于盘屿（软著/产品资料口径） ──
+        val verName = remember {
+            runCatching {
+                ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+            }.getOrDefault("1.0")
+        }
+        Group {
+            RowTile(
+                title = "关于盘屿",
+                subtitle = "盘屿语音转文字助手软件 · V$verName",
+                onClick = {}
+            )
+            RowTile(
+                title = "Panyu Speech-to-Text Assistant",
+                subtitle = "面向教育场景的音频、视频转文字工具；语音识别全程离线，不采集、不上传任何数据",
+                onClick = {}
+            )
+            RowTile(
+                title = "关键词",
+                subtitle = "语音识别 · 视频转文字 · 教育工具 · 知识沉淀",
+                onClick = {}
+            )
+        }
     }
 }
 
