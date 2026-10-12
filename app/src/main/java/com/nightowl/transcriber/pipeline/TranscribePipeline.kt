@@ -56,7 +56,9 @@ object TranscribeBus {
  *
  *   音轨抽取 → VAD 分句 → SenseVoice 识别 → 段交替 UI（流式） → 收尾导出 txt/srt
  *
- * 生产者（解码）与消费者（VAD+识别）通过协程顺序衔接，边抽边转；内存只保留段文本。
+ * ✦ 三层兜底 + 解码缓存：第一遍解码时把重采样 PCM 落入 cacheDir 临时文件，
+ *   兜底重跑（能量 VAD / 固定窗口）直接读缓存，不再走 MediaCodec 二次解码，
+ *   视频越长兜底越快（第二三遍通常几秒内完成）。
  */
 class TranscribePipeline(private val context: Context) {
 
@@ -99,7 +101,7 @@ class TranscribePipeline(private val context: Context) {
         var fedChunks = 0
         var fedSamples = 0L
         var peakAmp = 0f
-        // ✦ 前 4 秒音频转储（Silero 无输出时落盘供离线分析）
+        // ✦ 前 4 秒音频转储（VAD 无输出时落盘供离线分析）
         val debugBuf = FloatArray(64000)
         var debugLen = 0
 
@@ -108,7 +110,7 @@ class TranscribePipeline(private val context: Context) {
         TranscribeBus.progressText.value = "正在加载识别模型…"
 
         /** 识别一个语段并流式追加（空结果计数，不中断流水线） */
-        fun handleSegment(seg: com.nightowl.transcriber.engine.VadSegment) {
+        fun handleSegment(seg: VadSegment) {
             val segMs = seg.samples.size * 1000L / 16000
             val text = engine.transcribe(seg.samples)
             if (accumulated.size + skippedSegments < 5) {
@@ -133,12 +135,77 @@ class TranscribePipeline(private val context: Context) {
             }
         }
 
+        val cacheFile = java.io.File(context.cacheDir, "ot_pcm_cache.raw")
+        var firstPassSamples = 0L   // 第一圈总样本数（重跑进度基准，重跑不再走解码）
+
         try {
             val totalMs = extractor.durationMs(uri)
             TranscribeBus.status.value = Status.Running
 
-            /** 一遍完整解码+VAD+识别（Silero 无输出时用能量 VAD 再跑一遍） */
-            suspend fun runPass(v: VadDetector) {
+            /** 处理一个重采样音频块：统计 + 转储 + 喂 VAD */
+            fun processChunk(v: VadDetector, chunk: FloatArray) {
+                if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return
+
+                fedChunks++
+                fedSamples += chunk.size
+                if (chunk.isNotEmpty()) {
+                    val p = chunk.maxOf { kotlin.math.abs(it) }
+                    if (p > peakAmp) peakAmp = p
+                }
+                if (debugLen < debugBuf.size) {
+                    val n = minOf(chunk.size, debugBuf.size - debugLen)
+                    System.arraycopy(chunk, 0, debugBuf, debugLen, n)
+                    debugLen += n
+                }
+
+                // 喂 VAD：按窗口切片（尾帧不足窗口时丢弃，<32ms 无影响）
+                var offset = 0
+                while (offset + v.windowSize <= chunk.size) {
+                    val frame = chunk.copyOfRange(offset, offset + v.windowSize)
+                    offset += v.windowSize
+                    // ✦ 关键：一次喂入可能产出多段，必须全部处理
+                    for (seg in v.accept(frame)) {
+                        handleSegment(seg)
+                    }
+                }
+            }
+
+            /** 从解码缓存按块重放音频（兜底圈免二次解码，几秒完成） */
+            suspend fun feedFromCache(handler: (FloatArray) -> Unit) {
+                if (firstPassSamples <= 0L) return
+                withContext(Dispatchers.IO) {
+                    val buf = FloatArray(16000)   // 1 秒一块
+                    var filled = 0
+                    var total = 0L
+                    java.io.DataInputStream(
+                        java.io.BufferedInputStream(java.io.FileInputStream(cacheFile), 1 shl 16)
+                    ).use { din ->
+                        while (true) {
+                            if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@use
+                            val hi = din.read()
+                            val lo = din.read()
+                            if (lo < 0) break   // DataOutputStream.writeShort 大端：hi 在前
+                            buf[filled++] = (((hi shl 8) or lo).toShort()).toFloat() / 32767f
+                            total++
+                            if (filled == buf.size) {
+                                filled = 0
+                                handler(buf.copyOf())
+                                val p = (total.toFloat() / firstPassSamples).coerceIn(0f, 1f)
+                                TranscribeBus.progress.value = p
+                                TranscribeBus.progressText.value =
+                                    "重新分析音频…（已跳过解码） ${fmtTime(total * 1000L / 16000)} / ${fmtTime(firstPassSamples * 1000L / 16000)}"
+                            }
+                        }
+                    }
+                    if (filled > 0) handler(buf.copyOf(filled))
+                }
+            }
+
+            // ── 第一圈：完整解码（同时落缓存）+ Silero VAD + 识别 ──
+            val cacheOut = java.io.DataOutputStream(
+                java.io.BufferedOutputStream(java.io.FileOutputStream(cacheFile), 1 shl 16)
+            )
+            try {
                 extractor.extract(
                     uri = uri,
                     onProgress = { ms, total ->
@@ -148,58 +215,44 @@ class TranscribePipeline(private val context: Context) {
                     },
                     onChunk = { chunk ->
                         if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@extract
-
-                        fedChunks++
-                        fedSamples += chunk.size
-                        if (chunk.isNotEmpty()) {
-                            val p = chunk.maxOf { kotlin.math.abs(it) }
-                            if (p > peakAmp) peakAmp = p
+                        // 写解码缓存：兜底圈直接重放，不再二次解码
+                        for (s in chunk) {
+                            cacheOut.writeShort((s.coerceIn(-1f, 1f) * 32767).toInt())
                         }
-                        if (debugLen < debugBuf.size) {
-                            val n = minOf(chunk.size, debugBuf.size - debugLen)
-                            System.arraycopy(chunk, 0, debugBuf, debugLen, n)
-                            debugLen += n
-                        }
-
-                        // 喂 VAD：按窗口切片（尾帧不足窗口时丢弃，<32ms 无影响）
-                        var offset = 0
-                        while (offset + v.windowSize <= chunk.size) {
-                            val frame = chunk.copyOfRange(offset, offset + v.windowSize)
-                            offset += v.windowSize
-                            // ✦ 关键：一次喂入可能产出多段，必须全部处理
-                            for (seg in v.accept(frame)) {
-                                handleSegment(seg)
-                            }
-                        }
+                        processChunk(vad, chunk)
                     }
                 )
-
-                // ✦ 关键：音频喂完必须 flush，把 VAD 内部残余语音冲出（否则结尾整段丢失）
-                for (seg in v.flush()) {
-                    handleSegment(seg)
-                }
+            } finally {
+                runCatching { cacheOut.close() }
             }
+            firstPassSamples = fedSamples
 
-            runPass(vad)
+            // ✦ 关键：音频喂完必须 flush，把 VAD 内部残余语音冲出（否则结尾整段丢失）
+            for (seg in vad.flush()) {
+                handleSegment(seg)
+            }
 
             com.nightowl.transcriber.diag.OTLog.i(
                 "OTDiag",
                 "decode done: chunks=$fedChunks totalSamples=$fedSamples≈${fedSamples / 16000}s peak=$peakAmp segs=${accumulated.size} skipped=$skippedSegments"
             )
 
-            // ✦ 兜底：Silero 全程没切出任何段，但音频明显有声 → 换能量 VAD 重跑一遍
+            // ✦ 兜底二圈：Silero 全程没切出任何段，但音频明显有声 → 换能量 VAD 重放
             if (accumulated.isEmpty() && skippedSegments == 0 &&
                 peakAmp > 0.05f && !TranscribeBus.cancelRequested
             ) {
                 dumpDebugPcm(debugLen, debugBuf, "debug_first4s.pcm")
                 com.nightowl.transcriber.diag.OTLog.i(
                     "OTDiag",
-                    "Silero 0段(peak=$peakAmp) → 换能量VAD重跑（前4s已转储 debug_first4s.pcm）"
+                    "Silero 0段(peak=$peakAmp) → 换能量VAD重放（前4s已转储 debug_first4s.pcm）"
                 )
                 runCatching { vad.close() }
                 vad = EnergyVadDetector()
                 fedChunks = 0; fedSamples = 0; peakAmp = 0f; debugLen = 0
-                runPass(vad)
+                feedFromCache { chunk -> processChunk(vad, chunk) }
+                for (seg in vad.flush()) {
+                    handleSegment(seg)
+                }
                 com.nightowl.transcriber.diag.OTLog.i(
                     "OTDiag",
                     "fallback done: chunks=$fedChunks samples=$fedSamples peak=$peakAmp segs=${accumulated.size} skipped=$skippedSegments"
@@ -220,28 +273,19 @@ class TranscribePipeline(private val context: Context) {
                 val win = FloatArray(30 * 16000)
                 var winLen = 0
                 var absSamples = 0L
-                extractor.extract(
-                    uri = uri,
-                    onProgress = { ms, total ->
-                        val p = if (total > 0) (ms.toFloat() / total).coerceIn(0f, 1f) else 0f
-                        TranscribeBus.progress.value = p
-                        TranscribeBus.progressText.value = "${fmtTime(ms)} / ${fmtTime(total)}"
-                    },
-                    onChunk = { chunk ->
-                        if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@extract
-                        fedSamples += chunk.size
-                        var off = 0
-                        while (off < chunk.size) {
-                            val n = minOf(chunk.size - off, win.size - winLen)
-                            System.arraycopy(chunk, off, win, winLen, n)
-                            off += n; winLen += n
-                            if (winLen == win.size) {
-                                handleSegment(VadSegment(startSample = absSamples.toInt(), samples = win.copyOf()))
-                                absSamples += winLen; winLen = 0
-                            }
+                feedFromCache { chunk ->
+                    fedSamples += chunk.size
+                    var off = 0
+                    while (off < chunk.size) {
+                        val n = minOf(chunk.size - off, win.size - winLen)
+                        System.arraycopy(chunk, off, win, winLen, n)
+                        off += n; winLen += n
+                        if (winLen == win.size) {
+                            handleSegment(VadSegment(startSample = absSamples.toInt(), samples = win.copyOf()))
+                            absSamples += winLen; winLen = 0
                         }
                     }
-                )
+                }
                 if (winLen > 16000) { // 尾部 >1s 才值得识别
                     handleSegment(VadSegment(startSample = absSamples.toInt(), samples = win.copyOf(winLen)))
                 }
@@ -272,6 +316,8 @@ class TranscribePipeline(private val context: Context) {
         } finally {
             engine.close()
             vad.close()
+            // ✦ 临时解码缓存用完即删（10 分钟视频约 19MB）
+            runCatching { cacheFile.delete() }
         }
     }
 
