@@ -253,7 +253,7 @@ fun SettingsScreen(
         Group {
             RowTile(
                 title = "关于盘语",
-                subtitle = "盘语语音转文字助手软件 · V$verName",
+                subtitle = "盘语语音转文字助手软件（简称 盘语 APP）· V$verName",
                 onClick = {}
             )
             RowTile(
