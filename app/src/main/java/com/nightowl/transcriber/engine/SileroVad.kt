@@ -126,6 +126,10 @@ class EnergyVadDetector(
     }
 
     override fun flush(): List<VadSegment> {
+        com.nightowl.transcriber.diag.OTLog.i(
+            "OTDiag",
+            "energyVad flush: inSpeech=$inSpeech collected=${collected.size}样本 speechFrames=$speechFrames silenceFrames=$silenceFrames"
+        )
         // 音频结束：把仍在缓冲中的语音冲出（不做静音等待）
         return if (inSpeech && collected.isNotEmpty()) {
             val out = collected.toFloatArray()
