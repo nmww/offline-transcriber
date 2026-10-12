@@ -28,25 +28,58 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      # 固定签名：从 Secrets 恢复 keystore（PKCS12，keypass 与 storepass 相同）
+      - name: Restore signing keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          test -s release.keystore && echo "keystore 已恢复"
+
+      # 正式签名的 release APK；版本号 = run number，保证单调递增可覆盖安装
+      - name: Build signed release APK
+        run: |
+          gradle assembleRelease --no-daemon --stacktrace \
+            -PverCode=${{ github.run_number }} \
+            -PverName=1.0.${{ github.run_number }} \
+            -PksFile=release.keystore \
+            -PksPass="${{ secrets.KS_PASS }}" \
+            -PksAlias="${{ secrets.KEY_ALIAS }}" \
+            -PksPass2="${{ secrets.KS_PASS }}"
+
+      - name: Rename APK
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk \
+             OfflineTranscriber-v1.0.${{ github.run_number }}.apk
+          ls -lh OfflineTranscriber-*.apk
+
+      # latest.json 供 App 热更新走镜像秒查版本（无需 GitHub API）
+      - name: Write latest.json
+        run: |
+          SIZE_MB=$(du -m OfflineTranscriber-v1.0.${{ github.run_number }}.apk | cut -f1)
+          printf '{"tag":"v1.0.%s","apk":"OfflineTranscriber-v1.0.%s.apk","sizeMb":%s}\n' \
+            "${{ github.run_number }}" "${{ github.run_number }}" "$SIZE_MB" > latest.json
+          cat latest.json
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OfflineTranscriber-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: OfflineTranscriber-apk
+          path: |
+            OfflineTranscriber-*.apk
+            latest.json
           if-no-files-found: error
 
       - name: Publish to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: 离线转写 APK 构建 ${{ github.run_number }}
+          name: 离线转写 v1.0.${{ github.run_number }}
           body: |
-            云端自动构建的调试版 APK。
-            安装后请在 App「设置 → 识别模型」导入 SenseVoice 模型文件（model.int8.onnx / tokens.txt / silero_vad.onnx），
-            详见仓库 README。
-          files: app/build/outputs/apk/debug/*.apk
+            云端自动构建（固定签名，可覆盖安装）。
+
+            - 覆盖安装：数据与模型保留；卸载重装：模型会从公共 Download/离线转写/ 自动恢复，无需重新下载
+            - 模型：App「设置 → 下载识别模型」（hf-mirror 国内直连，228MB，仅首次）
+          files: |
+            OfflineTranscriber-*.apk
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
