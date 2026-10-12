@@ -41,6 +41,7 @@ jobs:
           test -s release.keystore && echo "keystore 已恢复"
 
       - name: Build signed release APK
+        # PKCS12 keystore 的 key 密码与 store 密码必须相同，故 ksPass2 也用 KS_PASS
         run: |
           gradle assembleRelease --no-daemon \
             -PverCode=${{ steps.ver.outputs.code }} \
@@ -48,7 +49,7 @@ jobs:
             -PksFile=release.keystore \
             -PksPass="${{ secrets.KS_PASS }}" \
             -PksAlias="${{ secrets.KEY_ALIAS }}" \
-            -PksPass2="${{ secrets.KEY_PASS }}"
+            -PksPass2="${{ secrets.KS_PASS }}"
 
       - name: Rename APK
         run: |
