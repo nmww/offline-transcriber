@@ -33,6 +33,9 @@ interface TranscriptDao {
 
     @Query("DELETE FROM transcripts WHERE id = :id")
     suspend fun delete(id: Int)
+
+    @Query("DELETE FROM transcripts")
+    suspend fun deleteAll()
 }
 
 @Database(entities = [Transcript::class], version = 1, exportSchema = false)
