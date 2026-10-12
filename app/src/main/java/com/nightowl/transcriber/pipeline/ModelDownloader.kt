@@ -126,7 +126,7 @@ object ModelDownloader {
                             val mb = downloaded / (1024f * 1024f)
                             val totalMb = if (total > 0) total / (1024f * 1024f) else 228f
                             _state.value = State.Downloading(
-                                fileProgress = (downloaded.toFloat() / total),
+                                fileProgress = if (total > 0) downloaded.toFloat() / total else 0f,
                                 downloadedMB = downloaded / (1024 * 1024),
                                 totalMB = totalMb.toLong()
                             )
