@@ -25,6 +25,7 @@ class TranscribeService : LifecycleService() {
 
     companion object {
         private const val CHANNEL_ID = "transcribe"
+        private const val DONE_CHANNEL_ID = "transcribe_done"
         private const val NOTI_ID = 1001
         const val EXTRA_URI = "uri"
         const val EXTRA_NAME = "name"
@@ -64,10 +65,46 @@ class TranscribeService : LifecycleService() {
             val settings = SettingsStore(this@TranscribeService)
             val fmt = ExportFormat.from(settings.transcriptStyle.first())
             pipeline.run(android.net.Uri.parse(uriStr), name, fmt)
+            notifyFinished()
             stopForeground(true)
             stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    /** 转写结束提醒：完成/失败各一条高优先级通知（点击打开 App 看结果），取消不打扰 */
+    private fun notifyFinished() {
+        val st = TranscribeBus.status.value
+        val text = when (st) {
+            is Status.Done -> "「${TranscribeBus.fileName.value}」转写完成，点击查看结果"
+            is Status.Error -> "转写失败：${st.message}"
+            else -> return   // Cancelled / 其他：静默
+        }
+        runCatching {
+            val mgr = getSystemService(NotificationManager::class.java)
+            // 注意：安卓不允许升级已建渠道的优先级，完成提醒必须用独立的新渠道才有横幅/声音
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mgr.createNotificationChannel(
+                    NotificationChannel(DONE_CHANNEL_ID, "转写完成提醒", NotificationManager.IMPORTANCE_HIGH)
+                )
+            }
+            val pi = PendingIntent.getActivity(
+                this, 0, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val n = NotificationCompat.Builder(this, DONE_CHANNEL_ID)
+                .setSmallIcon(
+                    if (st is Status.Done) android.R.drawable.stat_sys_download_done
+                    else android.R.drawable.stat_notify_error
+                )
+                .setContentTitle("离线转写")
+                .setContentText(text)
+                .setAutoCancel(true)
+                .setContentIntent(pi)
+                .build()
+            // 复用进度通知的 ID：结束时替换进度条，不堆两条
+            mgr.notify(NOTI_ID, n)
+        }
     }
 
     /** 把 Bus 的进度同步到通知栏 */
