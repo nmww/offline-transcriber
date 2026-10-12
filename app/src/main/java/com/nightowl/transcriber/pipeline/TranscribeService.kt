@@ -14,6 +14,7 @@ import com.nightowl.transcriber.MainActivity
 import com.nightowl.transcriber.data.ExportFormat
 import com.nightowl.transcriber.data.SettingsStore
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
