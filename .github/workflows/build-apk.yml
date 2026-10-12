@@ -18,8 +18,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # runner 自带 Android SDK（含 platforms;android-35 与已接受的 license），无需额外安装
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
