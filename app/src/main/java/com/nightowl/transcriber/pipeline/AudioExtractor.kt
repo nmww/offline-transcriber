@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import com.nightowl.transcriber.diag.OTLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -71,6 +72,7 @@ class AudioExtractor(private val context: Context) {
             val info = MediaCodec.BufferInfo()
             var sawInputEos = false
             var sawOutputEos = false
+            var fmtLogged = false
             var srcSampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE))
                 format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
             var channels = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
@@ -103,12 +105,38 @@ class AudioExtractor(private val context: Context) {
                             srcSampleRate = outFmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                         if (outFmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
                             channels = outFmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        val enc = if (outFmt.containsKey(MediaFormat.KEY_PCM_ENCODING))
+                            outFmt.getInteger(MediaFormat.KEY_PCM_ENCODING)
+                        else android.media.AudioFormat.ENCODING_PCM_16BIT
+                        if (!fmtLogged) {
+                            fmtLogged = true
+                            OTLog.i(
+                                "OTDiag",
+                                "audio fmt: mime=$mime srcSR=$srcSampleRate ch=$channels pcmEnc=$enc firstBytes=${info.size}"
+                            )
+                        }
 
-                        // PCM16LE → Float
-                        val pcm16 = ShortArray(info.size / 2)
-                        outBuf.duplicate().order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(pcm16)
-
-                        val mono = Downmixer.toMono(pcm16, channels)
+                        // 部分机型（C2 解码器）输出 float32 PCM，必须分流处理，
+                        // 否则把 float 字节当 int16 读出来全是噪声 → VAD 判定无语音 → 0 字
+                        val mono: FloatArray = if (enc == android.media.AudioFormat.ENCODING_PCM_FLOAT) {
+                            val pos = outBuf.position()
+                            outBuf.position(info.offset)
+                            outBuf.limit(info.offset + info.size)
+                            val n = info.size / 4
+                            val fb = outBuf.asFloatBuffer()
+                            val f = FloatArray(n)
+                            fb.get(f)
+                            outBuf.position(pos)
+                            Downmixer.toMonoFloat(f, channels)
+                        } else {
+                            outBuf.position(info.offset)
+                            outBuf.limit(info.offset + info.size)
+                            val n = info.size / 2
+                            val pcm16 = ShortArray(n)
+                            outBuf.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                .asShortBuffer().get(pcm16)
+                            Downmixer.toMono(pcm16, channels)
+                        }
                         val resampled = Resampler.resample(mono, srcSampleRate, TARGET_SR)
                         if (resampled.isNotEmpty()) onChunk(resampled)
 
@@ -157,6 +185,20 @@ object Downmixer {
         for (f in 0 until frames) {
             var acc = 0f
             for (c in 0 until channels) acc += pcm.getOrElse(idx++) { 0.toShort() } / 32768f
+            out[f] = acc / channels
+        }
+        return out
+    }
+
+    /** float32 PCM 版混音（部分 C2 解码器输出 float） */
+    fun toMonoFloat(pcm: FloatArray, channels: Int): FloatArray {
+        if (channels <= 1) return pcm
+        val frames = pcm.size / channels
+        val out = FloatArray(frames)
+        var idx = 0
+        for (f in 0 until frames) {
+            var acc = 0f
+            for (c in 0 until channels) acc += pcm.getOrElse(idx++) { 0f }
             out[f] = acc / channels
         }
         return out
