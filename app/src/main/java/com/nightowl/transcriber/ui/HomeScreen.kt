@@ -10,15 +10,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
@@ -29,19 +30,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nightowl.transcriber.data.Transcript
 import com.nightowl.transcriber.pipeline.TranscribePipeline
 
 /**
  * 首页（规格书 3.3 ①）——一屏只有一件事：选择文件。
- * 下方“最近转写”列表属于 P1，循序渐进展示。
+ *
+ * 视觉要点：主操作为【全宽 · 66dp 高 · 18dp 圆角】大按钮，居中图标+文字；
+ * 下方一条浅灰说明；再往下是「最近转写」列表或空态。
  */
 @Composable
 fun HomeScreen(
@@ -55,12 +57,13 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .systemBarsPadding()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 20.dp)
     ) {
+        // ── 标题栏 ──
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp),
+                .padding(top = 14.dp, bottom = 26.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -70,50 +73,64 @@ fun HomeScreen(
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Default.Settings, contentDescription = "设置",
-                    tint = MaterialTheme.colorScheme.onSurface)
-            }
-        }
-
-        Spacer(modifier = Modifier.size(24.dp))
-
-        // 全宽大按钮：56dp 高，28dp 圆角（规格书 3.2）
-        Surface(
-            modifier = Modifier
-                .heightIn(min = 56.dp)
-                .clip(RoundedCornerShape(Tokens.Button.dp))
-                .clickable { onPickFile() },
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
-        ) {
-            Column(
-                modifier = Modifier.padding(vertical = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Text(
-                        "  选择文件",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Text(
-                    "视频 / 音频都支持",
-                    style = MaterialTheme.typography.labelSmall
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "设置",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.size(32.dp))
+        // ── 主操作：全宽大按钮 ──
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(66.dp)
+                .clip(RoundedCornerShape(Tokens.Button.dp))
+                .clickable { onPickFile() }
+                .then(
+                    // 轻微投影，让主按钮从背景中"浮"起来
+                    Modifier
+                ),
+            shape = RoundedCornerShape(Tokens.Button.dp),
+            color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            shadowElevation = 6.dp
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.size(10.dp))
+                Text(
+                    "选择文件",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.size(12.dp))
+        Text(
+            "支持视频 / 音频 · 全程离线不上传",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.size(34.dp))
 
         Text(
             "最近转写",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
         )
-        Spacer(modifier = Modifier.size(8.dp))
+        Spacer(modifier = Modifier.size(10.dp))
 
         if (recent.isEmpty()) {
             EmptyState()
@@ -128,24 +145,40 @@ fun HomeScreen(
     }
 }
 
+/** 空态：圆形浅色图标底 + 双行文案，避免大片空白带来的"未完成感" */
 @Composable
 private fun EmptyState() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 48.dp),
+            .padding(top = 36.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.List,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        Spacer(modifier = Modifier.size(18.dp))
         Text(
             "还没有转写记录",
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground
         )
-        Spacer(modifier = Modifier.size(8.dp))
+        Spacer(modifier = Modifier.size(6.dp))
         Text(
-            "选择一个文件即可开始，全程离线不上传",
+            "选择一个文件即可开始",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
         )
     }
 }
@@ -160,25 +193,30 @@ private fun HistoryRow(item: Transcript, onOpen: (Transcript) -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     item.fileName,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
                 )
-                Spacer(modifier = Modifier.size(4.dp))
+                Spacer(modifier = Modifier.size(5.dp))
                 Text(
                     "${TranscribePipeline.fmtTime(item.durationMs)} · ${item.charCount} 字 · ${relTime(item.createdAt)}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                 )
             }
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.28f),
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }
