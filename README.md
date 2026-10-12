@@ -1,7 +1,20 @@
 # 离线转写 OfflineTranscriber
 
 > 一个 Android 离线应用：选择手机里的视频/音频，把声音转成文字，在**原文件同目录**生成 `.转写.txt`（对话语段排版）和 `.srt` 字幕文件。
-> **全程离线、零上传、零联网、不需要任何 API Key。**
+> **转写核心全程离线、零上传、不需要任何 API Key。**（联网仅限两处：设置里下载识别模型、检查应用更新）
+
+---
+
+## 手机安装（在线打包）
+
+本仓库用 GitHub Actions 自动打包签名 APK：
+
+1. 打开仓库 → **Actions → Build Release APK → Run workflow**（手动触发）
+2. CI 自动：版本号递增（v1.0.N）→ Gradle 构建 → 签名 → 发布到 **Releases**
+3. 手机浏览器打开 Releases 页下载 APK 安装（OPPO 需允许「安装未知应用」）
+4. 以后新版发布，在 App **设置 → 检查更新** 一键升级（覆盖安装保留模型与历史）
+
+签名密钥（keystore）备份在本地，CI 从 GitHub Secrets 读取；**密钥丢失将无法覆盖安装**，务必保管。
 
 对应规格书：《离线转写App-完整开发规格书.md》（本仓库同级，含 PRD / UI Token / 流水线 / 验收清单）。
 
@@ -82,7 +95,7 @@ app/src/main/java/com/nightowl/transcriber/
 | 流式显示 | `TranscribeBus.segments` StateFlow → UI `LazyColumn`（`key` 避免重排抖动）+ 自动滚底 |
 | 锁屏继续转 | `TranscribeService` 前台服务 + `foregroundServiceType=dataSync` |
 | 同目录导出 | `SameDirResolver.resolveParentDir()`：Document Uri → 真实路径 → 同级写 File；失败逐级回退到上次目录 → MediaStore `Documents/离线转写/` |
-| 隐私 | `AndroidManifest` 用 `tools:node="remove"` 强制移除 INTERNET / ACCESS_NETWORK_STATE 权限，第三方库也无法偷偷加回来 |
+| 隐私 | 转写核心全程离线；`INTERNET` 权限仅用于「设置→下载识别模型」与「检查更新」，Manifest 有注释说明 |
 
 ---
 
