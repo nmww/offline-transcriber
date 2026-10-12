@@ -13,8 +13,9 @@ android {
         applicationId = "com.nightowl.transcriber"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // CI 打包时通过 -PverCode / -PverName 注入；本地默认 1.0
+        versionCode = (project.findProperty("verCode")?.toString()?.toIntOrNull()) ?: 1
+        versionName = project.findProperty("verName")?.toString() ?: "1.0"
 
         ndk {
             // sherpa-onnx 原生库按规格书仅发 arm64-v8a（2018 年后主流机型全覆盖）
@@ -22,10 +23,26 @@ android {
         }
     }
 
+    // 签名配置：仅 CI 传入 -PksFile 等参数时生效；本地不传则产出 unsigned APK
+    signingConfigs {
+        create("release") {
+            val ks = project.findProperty("ksFile")?.toString()
+            if (ks != null) {
+                storeFile = rootProject.file(ks)
+                storePassword = project.findProperty("ksPass")?.toString()
+                keyAlias = project.findProperty("ksAlias")?.toString()
+                keyPassword = project.findProperty("ksPass2")?.toString()
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (project.hasProperty("ksFile")) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
