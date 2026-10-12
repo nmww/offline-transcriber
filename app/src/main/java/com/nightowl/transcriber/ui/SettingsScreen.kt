@@ -244,7 +244,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.size(24.dp))
 
-        // ── 关于盘屿（软著/产品资料口径） ──
+        // ── 关于盘语（软著/产品资料口径） ──
         val verName = remember {
             runCatching {
                 ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
@@ -252,8 +252,8 @@ fun SettingsScreen(
         }
         Group {
             RowTile(
-                title = "关于盘屿",
-                subtitle = "盘屿语音转文字助手软件 · V$verName",
+                title = "关于盘语",
+                subtitle = "盘语语音转文字助手软件 · V$verName",
                 onClick = {}
             )
             RowTile(

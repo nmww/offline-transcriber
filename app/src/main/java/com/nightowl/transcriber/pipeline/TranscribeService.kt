@@ -97,7 +97,7 @@ class TranscribeService : LifecycleService() {
                     if (st is Status.Done) android.R.drawable.stat_sys_download_done
                     else android.R.drawable.stat_notify_error
                 )
-                .setContentTitle("离线转写")
+                .setContentTitle("盘语")
                 .setContentText(text)
                 .setAutoCancel(true)
                 .setContentIntent(pi)
@@ -112,7 +112,11 @@ class TranscribeService : LifecycleService() {
         TranscribeBus.progress.collect { p ->
             val text = if (p >= 1f) "转写完成" else "已转 ${(p * 100).toInt()}%"
             val mgr = getSystemService(NotificationManager::class.java)
-            val n = buildNotification(TranscribeBus.fileName.value, text, (p * 100).toInt())
+            val n = buildNotification(
+                "盘语 · 转写中",
+                "${TranscribeBus.fileName.value}　$text",
+                (p * 100).toInt()
+            )
             mgr.notify(NOTI_ID, n)
         }
     }

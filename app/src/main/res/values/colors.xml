@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- 自适应图标背景：品牌青（取自熊猫额头声波） -->
+    <color name="ic_launcher_background">#16BFA8</color>
+    <!-- 启动窗口底色：与启动动画背景同色，冷启动不闪白 -->
+    <color name="brand_splash">#16BFA8</color>
 </resources>

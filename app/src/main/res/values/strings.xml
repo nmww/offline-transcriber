@@ -1,4 +1,4 @@
 <resources>
-    <!-- 桌面显示用简称（全称"盘屿语音转文字助手"在 设置→关于盘屿 中展示） -->
-    <string name="app_name">盘屿</string>
+    <!-- 桌面显示用简称（全称"盘语语音转文字助手"在 设置→关于盘语 中展示） -->
+    <string name="app_name">盘语</string>
 </resources>

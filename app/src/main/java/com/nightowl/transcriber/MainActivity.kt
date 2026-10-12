@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
@@ -121,7 +122,13 @@ class MainActivity : ComponentActivity() {
                 else -> isSystemInDarkTheme()
             }
             OfflineTranscriberTheme(darkTheme = dark) {
-                AppSurface()
+                // 启动动画 → 首页（动画结束前不渲染主界面，避免闪现）
+                var splashDone by remember { mutableStateOf(false) }
+                if (splashDone) {
+                    AppSurface()
+                } else {
+                    com.nightowl.transcriber.ui.SplashScreen(onFinish = { splashDone = true })
+                }
             }
         }
     }
