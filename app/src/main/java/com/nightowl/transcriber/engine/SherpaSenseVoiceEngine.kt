@@ -45,11 +45,14 @@ class SherpaSenseVoiceEngine(
 
     override fun transcribe(pcm: FloatArray, sampleRate: Int): String {
         return try {
+            // 注意：OfflineStream.use 的 block 返回 Unit，故先取出结果再返回
+            var text = ""
             recognizer.createStream().use { stream ->
                 stream.acceptWaveform(pcm, sampleRate)
                 recognizer.decode(stream)
-                TextCleaner.cleanSenseVoice(recognizer.getResult(stream).text)
+                text = TextCleaner.cleanSenseVoice(recognizer.getResult(stream).text)
             }
+            text
         } catch (t: Throwable) {
             // 单段失败不应中断整条流水线
             ""
