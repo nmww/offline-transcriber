@@ -40,9 +40,9 @@ object Tokens {
     val DangerLight = Color(0xFFFF3B30)
     val DangerDark = Color(0xFFFF453A)
 
-    // 形状：卡片 20dp / 大按钮 28dp / 输入区 16dp
+    // 形状：卡片 20dp / 大按钮 18dp / 输入区 16dp
     const val RadiusCard = 20
-    const val RadiusButton = 28
+    const val RadiusButton = 18
     const val RadiusInput = 16
 
     // 间距体系
