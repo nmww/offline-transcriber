@@ -190,18 +190,63 @@ class TranscribePipeline(private val context: Context) {
             if (accumulated.isEmpty() && skippedSegments == 0 &&
                 peakAmp > 0.05f && !TranscribeBus.cancelRequested
             ) {
-                dumpDebugPcm(debugLen, debugBuf)
+                dumpDebugPcm(debugLen, debugBuf, "debug_first4s.pcm")
                 com.nightowl.transcriber.diag.OTLog.i(
                     "OTDiag",
                     "Silero 0段(peak=$peakAmp) → 换能量VAD重跑（前4s已转储 debug_first4s.pcm）"
                 )
                 runCatching { vad.close() }
                 vad = EnergyVadDetector()
-                fedChunks = 0; fedSamples = 0; peakAmp = 0f
+                fedChunks = 0; fedSamples = 0; peakAmp = 0f; debugLen = 0
                 runPass(vad)
                 com.nightowl.transcriber.diag.OTLog.i(
                     "OTDiag",
-                    "fallback done: segs=${accumulated.size} skipped=$skippedSegments"
+                    "fallback done: chunks=$fedChunks samples=$fedSamples peak=$peakAmp segs=${accumulated.size} skipped=$skippedSegments"
+                )
+            }
+
+            // ✦ 第三层兜底：VAD 全军覆没但音频确实有声 → 固定 30s 窗口硬切直喂识别
+            //   （等价于第一版"整段喂模型"的行为，保证任何有声视频都有输出）
+            if (accumulated.isEmpty() && skippedSegments == 0 &&
+                peakAmp > 0.05f && !TranscribeBus.cancelRequested
+            ) {
+                dumpDebugPcm(debugLen, debugBuf, "debug_energy.pcm")
+                com.nightowl.transcriber.diag.OTLog.i(
+                    "OTDiag",
+                    "能量VAD也0段(peak=$peakAmp) → 固定30s窗口直切（转储 debug_energy.pcm）"
+                )
+                fedChunks = 0; fedSamples = 0; peakAmp = 0f; debugLen = 0
+                val win = FloatArray(30 * 16000)
+                var winLen = 0
+                var absSamples = 0L
+                extractor.extract(
+                    uri = uri,
+                    onProgress = { ms, total ->
+                        val p = if (total > 0) (ms.toFloat() / total).coerceIn(0f, 1f) else 0f
+                        TranscribeBus.progress.value = p
+                        TranscribeBus.progressText.value = "${fmtTime(ms)} / ${fmtTime(total)}"
+                    },
+                    onChunk = { chunk ->
+                        if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@extract
+                        fedSamples += chunk.size
+                        var off = 0
+                        while (off < chunk.size) {
+                            val n = minOf(chunk.size - off, win.size - winLen)
+                            System.arraycopy(chunk, off, win, winLen, n)
+                            off += n; winLen += n
+                            if (winLen == win.size) {
+                                handleSegment(VadSegment(startSample = absSamples.toInt(), samples = win.copyOf()))
+                                absSamples += winLen; winLen = 0
+                            }
+                        }
+                    }
+                )
+                if (winLen > 16000) { // 尾部 >1s 才值得识别
+                    handleSegment(VadSegment(startSample = absSamples.toInt(), samples = win.copyOf(winLen)))
+                }
+                com.nightowl.transcriber.diag.OTLog.i(
+                    "OTDiag",
+                    "fixedwindow done: samples=$fedSamples segs=${accumulated.size} skipped=$skippedSegments"
                 )
             }
 
@@ -229,12 +274,12 @@ class TranscribePipeline(private val context: Context) {
         }
     }
 
-    /** 把前 4 秒重采样音频写成 16bit PCM，供离线分析（Silero 无输出时才调用） */
-    private fun dumpDebugPcm(len: Int, buf: FloatArray) {
+    /** 把前几秒重采样音频写成 16bit PCM，供离线分析（VAD 无输出时才调用） */
+    private fun dumpDebugPcm(len: Int, buf: FloatArray, filename: String) {
         runCatching {
             java.io.DataOutputStream(
                 java.io.BufferedOutputStream(
-                    java.io.FileOutputStream(java.io.File(context.filesDir, "debug_first4s.pcm"))
+                    java.io.FileOutputStream(java.io.File(context.filesDir, filename))
                 )
             ).use { out ->
                 for (i in 0 until len) {
