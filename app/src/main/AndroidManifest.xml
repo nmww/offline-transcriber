@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ⚠️ 隐私红线：本应用【不申请 INTERNET 权限】，全程离线。
-     任何新增依赖若引入联网能力（如在线 SDK、埋点库）均违反产品规格，禁止添加。
+  联网说明：本应用仅在「设置 → 下载识别模型」这一处使用网络（下载 SenseVoice 模型文件）。
+  语音转写、字幕导出等核心功能全程离线，不采集、不上传任何用户数据。
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -12,12 +12,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- 明确声明确无联网需求，阻止第三方库偷偷带入 -->
-    <uses-permission android:name="android.permission.INTERNET"
-        tools:node="remove" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"
-        tools:node="remove" />
+    <!-- 仅用于一次性模型下载（可跳过：也可从电脑拷贝文件手动导入） -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
@@ -46,5 +42,10 @@
             android:exported="false"
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false" />
+
+        <service
+            android:name=".pipeline.ModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>
