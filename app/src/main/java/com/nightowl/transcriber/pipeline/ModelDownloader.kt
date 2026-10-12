@@ -66,6 +66,14 @@ object ModelDownloader {
             return@withContext true
         }
 
+        // 优先从公共区（Download/离线转写/，卸载重装不丢）恢复：本地拷贝，秒级，不联网
+        _state.value = State.Downloading(0f, 0, 228)
+        if (ModelManager.restoreModelFromPublic(context, EXPECTED_BYTES)) {
+            ModelManager.ensureBaseFiles(context)
+            _state.value = State.Done
+            return@withContext true
+        }
+
         _state.value = State.Downloading(0f, 0, 228)
         var lastError = "未知错误"
 
@@ -73,6 +81,8 @@ object ModelDownloader {
             if (cancelRequested) break
             try {
                 if (downloadFrom(url, context)) {
+                    // 双写：公共区留一份，卸载/重装后可秒恢复
+                    ModelManager.backupModelToPublic(context, EXPECTED_BYTES)
                     _state.value = State.Done
                     return@withContext true
                 }
