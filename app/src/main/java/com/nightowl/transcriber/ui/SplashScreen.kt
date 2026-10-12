@@ -36,7 +36,7 @@ import kotlin.math.min
 private const val SPLASH_MS = 1600
 
 /**
- * 启动动画页：品牌青渐变底 + 白色柔光盘 + 熊猫 logo + 三圈声波扩散 + 名称淡入。
+ * 启动动画页：品牌青渐变底 + 透明底熊猫 logo + 三圈声波扩散 + 名称淡入。
  * 时间线跑完回调 [onFinish] 进入首页。
  */
 @Composable
@@ -50,7 +50,6 @@ fun SplashScreen(onFinish: () -> Unit) {
     // 归一化取时间段进度
     fun at(from: Float, to: Float) = ((t - from) / (to - from)).coerceIn(0f, 1f)
 
-    val disk = at(0.00f, 0.30f)          // 白光盘展开
     val logoA = at(0.06f, 0.34f)         // 熊猫淡入
     val logoScale = 0.82f + 0.18f * at(0.06f, 0.48f)
 
@@ -65,20 +64,13 @@ fun SplashScreen(onFinish: () -> Unit) {
                 Canvas(modifier = Modifier.size(260.dp)) {
                     val c = Offset(size.width / 2f, size.height / 2f)
                     val base = min(size.width, size.height) / 2f
-                    if (disk > 0f) {
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.96f * disk),
-                            radius = base * 0.60f * disk,
-                            center = c
-                        )
-                    }
-                    // 三圈声波：从光盘边缘向外扩散，依次错开
+                    // 三圈声波：熊猫外侧向外扩散，依次错开（无白底圆盘）
                     for (i in 0..2) {
                         val p = at(0.10f + i * 0.15f, 0.62f + i * 0.15f)
                         if (p <= 0f || p >= 1f) continue
                         drawCircle(
-                            color = Color.White.copy(alpha = (1f - p) * 0.38f),
-                            radius = base * (0.64f + 0.34f * p),
+                            color = Color.White.copy(alpha = (1f - p) * 0.42f),
+                            radius = base * (0.50f + 0.44f * p),
                             center = c,
                             style = Stroke(width = (3f * (1f - p) + 1f).dp.toPx())
                         )
