@@ -5,6 +5,7 @@ import android.net.Uri
 import com.nightowl.transcriber.data.ExportFormat
 import com.nightowl.transcriber.data.Exporter
 import com.nightowl.transcriber.engine.AsrEngine
+import com.nightowl.transcriber.engine.EnergyVadDetector
 import com.nightowl.transcriber.engine.ModelManager
 import com.nightowl.transcriber.engine.Segment
 import com.nightowl.transcriber.engine.VadDetector
