@@ -28,6 +28,9 @@ object ModelDownloader {
     private const val PART_SUFFIX = ".part"
     private const val BUFFER = 64 * 1024
 
+    /** 官方 model.int8.onnx 的确切字节数（hf-mirror 实测），下载完成必须完全一致，防止损坏模型引发原生层崩溃 */
+    const val EXPECTED_BYTES = 239_233_841L
+
     sealed class State {
         object Idle : State()
         data class Downloading(val fileProgress: Float, val downloadedMB: Long, val totalMB: Long) : State()
@@ -132,9 +135,12 @@ object ModelDownloader {
                 }
             }
 
-            // 校验大小（服务端给出总量时）
-            if (total > 0 && part.length() < total) {
+            // 校验完整性：服务器给出总量时必须一致；与已知官方大小比对
+            if (total > 0 && part.length() != total) {
                 throw IllegalStateException("下载不完整：${part.length()}/$total")
+            }
+            if (part.length() != EXPECTED_BYTES) {
+                throw IllegalStateException("文件大小异常：${part.length()}（期望 $EXPECTED_BYTES）")
             }
 
             // 原子落位
