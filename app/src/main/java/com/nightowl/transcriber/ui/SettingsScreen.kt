@@ -196,7 +196,8 @@ fun SettingsScreen(
         Group {
             RowTile(
                 title = "异常与日志",
-                subtitle = if (reportFiles.isEmpty()) "暂无异常记录" else "共 ${reportFiles.size} 份异常报告，点击条目可分享给开发者"
+                subtitle = if (reportFiles.isEmpty()) "暂无异常记录" else "共 ${reportFiles.size} 份异常报告，点击条目可分享给开发者",
+                onClick = {}
             )
             reportFiles.take(5).forEach { f ->
                 RowTile(
