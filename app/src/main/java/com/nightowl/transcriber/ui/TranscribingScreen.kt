@@ -98,7 +98,12 @@ fun TranscribingScreen(
                 }
             }
             Spacer(modifier = Modifier.size(16.dp))
-            Text("正在转写：$fileName", style = MaterialTheme.typography.titleLarge,
+            val status by TranscribeBus.status.collectAsState()
+            val heading = when (status) {
+                com.nightowl.transcriber.pipeline.Status.Preparing -> "正在加载识别模型…"
+                else -> "正在转写：$fileName"
+            }
+            Text(heading, style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground)
         }
 
