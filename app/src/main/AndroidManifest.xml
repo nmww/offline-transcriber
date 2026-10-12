@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 仅用于一次性模型下载（可跳过：也可从电脑拷贝文件手动导入） -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 应用内热更新：下载新 APK 后唤起系统安装器（覆盖安装保留模型与数据） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="true"
@@ -47,5 +49,15 @@
             android:name=".pipeline.ModelDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>
