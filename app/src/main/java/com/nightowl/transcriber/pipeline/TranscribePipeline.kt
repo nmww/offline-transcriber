@@ -75,6 +75,10 @@ class TranscribePipeline(private val context: Context) {
         val accumulated = ArrayList<Segment>()
         var skippedSegments = 0
 
+        // ✦ 明确告知用户当前处于"加载模型"阶段（首次加载需数秒，不是卡死）
+        TranscribeBus.status.value = Status.Preparing
+        TranscribeBus.progressText.value = "正在加载识别模型…"
+
         /** 识别一个语段并流式追加（空结果计数，不中断流水线） */
         fun handleSegment(seg: com.nightowl.transcriber.engine.VadSegment) {
             val text = engine.transcribe(seg.samples)
