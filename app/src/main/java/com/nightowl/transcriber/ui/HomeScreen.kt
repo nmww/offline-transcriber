@@ -2,6 +2,7 @@ package com.nightowl.transcriber.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,9 +57,14 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenResult: (Transcript) -> Unit,
     onOpenTask: () -> Unit,
-    onCancelTask: () -> Unit
+    onCancelTask: () -> Unit,
+    onDelete: (Transcript) -> Unit,
+    onDeleteAll: () -> Unit
 ) {
     val taskStatus by TranscribeBus.status.collectAsState()
+    // 删除确认对话框状态
+    var pendingDelete by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Transcript?>(null) }
+    var showClearAll by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -145,12 +151,24 @@ fun HomeScreen(
             Spacer(modifier = Modifier.size(22.dp))
         }
 
-        Text(
-            "最近转写",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "最近转写",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                modifier = Modifier.weight(1f)
+            )
+            if (recent.isNotEmpty()) {
+                androidx.compose.material3.TextButton(onClick = { showClearAll = true }) {
+                    Text("清空", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+                }
+            }
+        }
         Spacer(modifier = Modifier.size(10.dp))
 
         if (recent.isEmpty()) {
@@ -158,11 +176,43 @@ fun HomeScreen(
         } else {
             LazyColumn {
                 items(recent, key = { it.id }) { item ->
-                    HistoryRow(item, onOpenResult)
+                    HistoryRow(item, onOpenResult, onLongPress = { pendingDelete = item })
                     Spacer(modifier = Modifier.size(12.dp))
                 }
             }
         }
+    }
+
+    // ── 删除确认 ──
+    pendingDelete?.let { item ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除这条转写记录？") },
+            text = { Text("「${item.fileName}」的记录将从列表移除（已导出的文件不受影响）") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    onDelete(item); pendingDelete = null
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            }
+        )
+    }
+    if (showClearAll) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearAll = false },
+            title = { Text("清空全部转写记录？") },
+            text = { Text("共 ${recent.size} 条记录将被移除，此操作不可恢复（已导出的文件不受影响）") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    onDeleteAll(); showClearAll = false
+                }) { Text("全部删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showClearAll = false }) { Text("取消") }
+            }
+        )
     }
 }
 
@@ -266,12 +316,16 @@ private fun EmptyState() {    Column(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun HistoryRow(item: Transcript, onOpen: (Transcript) -> Unit) {
+private fun HistoryRow(item: Transcript, onOpen: (Transcript) -> Unit, onLongPress: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpen(item) },
+            .combinedClickable(
+                onClick = { onOpen(item) },
+                onLongClick = onLongPress
+            ),
         shape = RoundedCornerShape(Tokens.Card.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
