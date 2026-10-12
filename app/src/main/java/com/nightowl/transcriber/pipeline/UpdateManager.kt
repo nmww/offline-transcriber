@@ -12,14 +12,28 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * 应用内热更新：检查 GitHub Release → 应用内下载新 APK → 唤起系统安装。
+ * 应用内热更新：检查新版本 → 应用内下载新 APK → 唤起系统安装。
  *
- * - 模型文件存放在应用内部存储（filesDir），覆盖安装【不会】清除 → 已下载的 228MB 模型不会重复下载
- * - 版本比较：与上次「已下载/已忽略」的 Release tag 比对（tag 由 CI 递增，v1.0.N 单调递增）
+ * 提速要点：
+ * - 查版本不再直连 GitHub API（手机直连慢且易超时），改走国内加速镜像拉取
+ *   Release 里的 latest.json（仅几百字节，秒回）；全部失败再回退 GitHub API
+ * - APK 下载同样多镜像竞速排序（gh-proxy.com 实测最快）+ 断点续传
+ *
+ * - 模型文件存放在应用内部存储（filesDir）+ 公共 Download/离线转写/ 双备份，
+ *   覆盖安装【不会】清除；卸载重装后模型也会从公共区自动恢复，无需重新下载
+ * - 版本比较：tag 形如 v1.0.N，N 与 APK versionCode 一致（CI 注入），单调递增
  */
 object UpdateManager {
 
+    /** latest.json 直链（release asset，无需 GitHub API）；releases/latest/download 自动指向最新一版 */
+    private val VERSION_PROBES = listOf(
+        "https://gh-proxy.com/https://github.com/nmww/offline-transcriber/releases/latest/download/latest.json",
+        "https://ghfast.top/https://github.com/nmww/offline-transcriber/releases/latest/download/latest.json",
+        "https://ghproxy.net/https://github.com/nmww/offline-transcriber/releases/latest/download/latest.json",
+    )
+
     private const val LATEST_API = "https://api.github.com/repos/nmww/offline-transcriber/releases/latest"
+
     private const val PREF = "update"
     private const val KEY_LAST_SEEN = "last_seen_tag"
 
@@ -54,9 +68,73 @@ object UpdateManager {
     private fun lastSeenTag(context: Context): String =
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY_LAST_SEEN, "")!!
 
+    /** 本机已安装的 versionCode */
+    private fun installedBuild(context: Context): Int = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).let {
+            if (android.os.Build.VERSION.SDK_INT >= 28) it.longVersionCode.toInt() else it.versionCode
+        }
+    } catch (_: Throwable) {
+        -1
+    }
+
     /** 检查最新版本；有新版返回 Available（含 APK 直链），否则 UpToDate */
     suspend fun check(context: Context): State = withContext(Dispatchers.IO) {
         _state.value = State.Checking
+        try {
+            // 先走镜像 latest.json（快），失败回退 GitHub API
+            val info = probeLatestJson() ?: probeLatestApi()
+
+            if (info == null || info.tag.isEmpty() || info.apkUrl.isEmpty()) {
+                val st = State.Failed("暂时查不到新版本（网络受限）")
+                _state.value = st
+                return@withContext st
+            }
+
+            val seen = lastSeenTag(context)
+            val latestBuild = buildOf(info.tag)
+            val st = if (latestBuild > installedBuild(context) && latestBuild > buildOf(seen)) {
+                State.Available(info)
+            } else {
+                State.UpToDate
+            }
+            _state.value = st
+            st
+        } catch (t: Throwable) {
+            val st = State.Failed(t.message ?: "网络错误")
+            _state.value = st
+            st
+        }
+    }
+
+    /** tag 形如 v1.0.N，取尾号 build 号 */
+    private fun buildOf(tag: String): Int =
+        tag.substringAfterLast('.').filter { it.isDigit() }.toIntOrNull() ?: -1
+
+    /** 通过镜像拉 latest.json（几百字节，秒回） */
+    private fun probeLatestJson(): ReleaseInfo? {
+        for (url in VERSION_PROBES) {
+            try {
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.connectTimeout = 8_000
+                conn.readTimeout = 10_000
+                conn.instanceFollowRedirects = true
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+                val obj = org.json.JSONObject(body)
+                val tag = obj.optString("tag", "")
+                if (tag.isEmpty()) continue
+                val apkName = obj.optString("apk", "OfflineTranscriber-$tag.apk")
+                val apkUrl = "https://github.com/nmww/offline-transcriber/releases/download/$tag/$apkName"
+                return ReleaseInfo(tag, apkUrl, obj.optLong("sizeMb", 0L), obj.optString("publishedAt", ""))
+            } catch (_: Throwable) {
+                // 换下一个镜像
+            }
+        }
+        return null
+    }
+
+    /** 回退：GitHub Releases API */
+    private fun probeLatestApi(): ReleaseInfo? {
         try {
             val conn = URL(LATEST_API).openConnection() as HttpURLConnection
             conn.connectTimeout = 15_000
@@ -81,38 +159,18 @@ object UpdateManager {
                     }
                 }
             }
-            if (tag.isEmpty() || apkUrl.isEmpty()) {
-                val st = State.Failed("Release 中未找到 APK")
-                _state.value = st
-                return@withContext st
-            }
-
-            val st = if (tag != lastSeenTag(context) && hasNewerBuild(tag, lastSeenTag(context))) {
-                State.Available(ReleaseInfo(tag, apkUrl, sizeMb, published))
-            } else {
-                State.UpToDate
-            }
-            _state.value = st
-            st
-        } catch (t: Throwable) {
-            val st = State.Failed(t.message ?: "网络错误")
-            _state.value = st
-            st
+            if (tag.isEmpty() || apkUrl.isEmpty()) return null
+            return ReleaseInfo(tag, apkUrl, sizeMb, published)
+        } catch (_: Throwable) {
+            return null
         }
     }
 
-    /** tag 形如 v1.0.N，比较尾号 build 号 */
-    private fun hasNewerBuild(latest: String, seen: String): Boolean {
-        fun buildOf(tag: String): Int =
-            tag.substringAfterLast('.').filter { it.isDigit() }.toIntOrNull() ?: -1
-        return buildOf(latest) > buildOf(seen)
-    }
-
-    /** 国内加速代理（按可用性实测排序），最后一个是 GitHub 原始直链兜底 */
+    /** 国内加速代理（实测速度排序），最后一个是 GitHub 原始直链兜底 */
     private fun apkSources(apkUrl: String): List<String> = listOf(
-        "https://ghproxy.net/$apkUrl",
         "https://gh-proxy.com/$apkUrl",
         "https://ghfast.top/$apkUrl",
+        "https://ghproxy.net/$apkUrl",
         apkUrl
     )
 
