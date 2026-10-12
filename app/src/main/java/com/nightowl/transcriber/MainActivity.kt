@@ -27,6 +27,8 @@ import com.nightowl.transcriber.data.AppDatabase
 import com.nightowl.transcriber.data.ExportFormat
 import com.nightowl.transcriber.data.SettingsStore
 import com.nightowl.transcriber.engine.ModelManager
+import com.nightowl.transcriber.pipeline.ModelDownloadService
+import com.nightowl.transcriber.pipeline.ModelDownloader
 import com.nightowl.transcriber.pipeline.Status
 import com.nightowl.transcriber.pipeline.TranscribeBus
 import com.nightowl.transcriber.pipeline.TranscribeService
@@ -86,8 +88,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = SettingsStore(this)
+        ModelManager.ensureBaseFiles(this)          // 解包内置 tokens/vad
         modelReady = ModelManager.isReady(this)
         askNotifications()
+
+        // 模型下载完成 → 刷新就绪状态
+        lifecycleScope.launch {
+            ModelDownloader.state.collect { st ->
+                if (st is ModelDownloader.State.Done) {
+                    modelReady = ModelManager.isReady(this@MainActivity)
+                }
+            }
+        }
 
         setContent {
             val themeMode by settings.themeMode.collectAsState(initial = "system")
@@ -155,19 +167,32 @@ class MainActivity : ComponentActivity() {
                             onBack = { screen = Screen.HOME }
                         )
                     }
-                    Screen.SETTINGS -> SettingsScreen(
-                        modelReady = modelReady,
-                        themeMode = themeMode,
-                        styleCode = styleCode,
-                        showTimestamps = showTs,
-                        autoSave = autoSave,
-                        onPickModel = { pickModel.launch(arrayOf("*/*")) },
-                        onThemeChange = { lifecycleScope.launch { settings.setTheme(it) } },
-                        onStyleChange = { lifecycleScope.launch { settings.setStyle(it) } },
-                        onTimestampsChange = { lifecycleScope.launch { settings.setTimestamps(it) } },
-                        onAutoSaveChange = { lifecycleScope.launch { settings.setAutoSave(it) } },
-                        onBack = { screen = Screen.HOME }
-                    )
+                    Screen.SETTINGS -> {
+                        val dlState by ModelDownloader.state.collectAsState()
+                        SettingsScreen(
+                            modelReady = modelReady,
+                            themeMode = themeMode,
+                            styleCode = styleCode,
+                            showTimestamps = showTs,
+                            autoSave = autoSave,
+                            downloadState = dlState,
+                            onDownloadModels = {
+                                if (modelReady) {
+                                    // 已就绪时点击 → 仅提示已就绪（避免误重下）
+                                    Toast.makeText(this, "模型已就绪，无需下载", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    ModelDownloadService.start(this)
+                                }
+                            },
+                            onCancelDownload = { ModelDownloader.requestCancel() },
+                            onPickModel = { pickModel.launch(arrayOf("*/*")) },
+                            onThemeChange = { lifecycleScope.launch { settings.setTheme(it) } },
+                            onStyleChange = { lifecycleScope.launch { settings.setStyle(it) } },
+                            onTimestampsChange = { lifecycleScope.launch { settings.setTimestamps(it) } },
+                            onAutoSaveChange = { lifecycleScope.launch { settings.setAutoSave(it) } },
+                            onBack = { screen = Screen.HOME }
+                        )
+                    }
                 }
             }
         }
