@@ -87,10 +87,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installCrashGuard()
         settings = SettingsStore(this)
         ModelManager.ensureBaseFiles(this)          // 解包内置 tokens/vad
         modelReady = ModelManager.isReady(this)
         askNotifications()
+
+        // 上次若发生异常退出，提示用户（日志已存 crash.log，便于反馈排查）
+        val crashLog = java.io.File(filesDir, "crash.log")
+        if (crashLog.exists()) {
+            Toast.makeText(this, "检测到上次异常退出，问题日志已保存", Toast.LENGTH_LONG).show()
+            crashLog.renameTo(java.io.File(filesDir, "crash.log.seen"))
+        }
 
         // 模型下载完成 → 刷新就绪状态
         lifecycleScope.launch {
@@ -198,8 +206,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun displayName(uri: Uri): String {
-        return try {
+    /** 崩溃守卫：任何未捕获异常写入 crash.log（供反馈排查），再交回系统处理 */
+    private fun installCrashGuard() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                java.io.File(filesDir, "crash.log").appendText(
+                    "==== ${java.util.Date()} thread=${t.name}\n" +
+                        android.util.Log.getStackTraceString(e) + "\n"
+                )
+            } catch (_: Throwable) {}
+            prev?.uncaughtException(t, e)
+        }
+    }
+
+    private fun displayName(uri: Uri): String {        return try {
             contentResolver.query(uri, null, null, null, null)?.use { c ->
                 val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (c.moveToFirst() && idx >= 0) c.getString(idx) else uri.lastPathSegment
