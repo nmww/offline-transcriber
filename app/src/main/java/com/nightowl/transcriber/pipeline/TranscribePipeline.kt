@@ -68,8 +68,27 @@ class TranscribePipeline(private val context: Context) {
         TranscribeBus.status.value = Status.Preparing
 
         val extractor = AudioExtractor(context)
+
+        // ✦ 诊断面包屑：模型文件状态（文件大小/存在性）——native 层 exit 无法被 Java 捕获，
+        //   必须在进入引擎前把状态写进 logcat
+        android.util.Log.i("OTDiag", "pipeline start uri=$uri name=$displayName")
+        android.util.Log.i(
+            "OTDiag",
+            "model=${ModelManager.modelFile(context).exists()}/${ModelManager.modelFile(context).length()}" +
+                " tokens=${ModelManager.tokensFile(context).exists()}/${ModelManager.tokensFile(context).length()}" +
+                " vad=${ModelManager.vadFile(context).exists()}/${ModelManager.vadFile(context).length()}"
+        )
+        if (!ModelManager.isReady(context)) {
+            TranscribeBus.status.value = Status.Error("模型未就绪：请到「设置」完成模型下载")
+            return@withContext Result.failure(IllegalStateException("model not ready"))
+        }
+
+        android.util.Log.i("OTDiag", "creating ASR engine…")
         val engine: AsrEngine = ModelManager.createEngine(context)
+        android.util.Log.i("OTDiag", "ASR engine created OK")
+        android.util.Log.i("OTDiag", "creating VAD…")
         val vad: VadDetector = ModelManager.createVad(context)
+        android.util.Log.i("OTDiag", "VAD created OK")
         val resultBuilder = StringBuilder()
         val startedAt = System.currentTimeMillis()
         val accumulated = ArrayList<Segment>()
