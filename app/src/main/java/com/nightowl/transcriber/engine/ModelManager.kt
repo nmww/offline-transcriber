@@ -5,10 +5,14 @@ import android.net.Uri
 import java.io.File
 
 /**
- * 模型管理：负责识别模型的「导入 → 校验 → 定位」。
+ * 模型管理。
  *
- * 产品原则：APK 本体 ~10MB，不打包 228MB 模型；用户从手机存储选一次模型文件，之后永久离线可用。
- * 模型文件统一落在应用内部 filesDir/models/ 下。
+ * 获取模型的两条路：
+ *   ① 应用内一键下载（推荐）：tokens.txt / silero_vad.onnx 已随 APK 内置（assets），
+ *      仅 228MB 的 model.int8.onnx 需在线下载（见 pipeline.ModelDownloader）
+ *   ② 手动导入：从手机存储选择文件（保留，作为下载失败的兜底）
+ *
+ * 所有文件统一落在应用内部 filesDir/models/ 下。
  */
 object ModelManager {
 
@@ -16,34 +20,45 @@ object ModelManager {
     const val FILE_TOKENS = "tokens.txt"
     const val FILE_VAD = "silero_vad.onnx"
 
-    private const val PREF = "model"
-    private const val KEY_MODEL = "model_path"
-    private const val KEY_TOKENS = "tokens_path"
-    private const val KEY_VAD = "vad_path"
-
     fun modelsDir(context: Context): File =
         File(context.filesDir, "models").apply { mkdirs() }
 
+    fun modelFile(context: Context): File = File(modelsDir(context), FILE_MODEL)
+    fun tokensFile(context: Context): File = File(modelsDir(context), FILE_TOKENS)
+    fun vadFile(context: Context): File = File(modelsDir(context), FILE_VAD)
+
+    /**
+     * 把 APK 内置的 tokens.txt / silero_vad.onnx 解包到 models 目录（幂等）。
+     * 在 App 启动时调用一次。
+     */
+    fun ensureBaseFiles(context: Context) {
+        copyAssetIfNeeded(context, FILE_TOKENS)
+        copyAssetIfNeeded(context, FILE_VAD)
+    }
+
+    /** 识别模型是否就绪（主模型存在且 >200MB，tokens 存在） */
     fun isReady(context: Context): Boolean {
-        val p = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-        val m = p.getString(KEY_MODEL, null)
-        val t = p.getString(KEY_TOKENS, null)
-        return m != null && File(m).exists() && t != null && File(t).exists()
+        ensureBaseFiles(context)
+        val m = modelFile(context)
+        return m.exists() && m.length() > 200L * 1024 * 1024 && tokensFile(context).exists()
     }
 
-    fun vadPath(context: Context): String? {
-        val p = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-        val v = p.getString(KEY_VAD, null)
-        return if (v != null && File(v).exists()) v else null
+    fun modelPath(context: Context): String = modelFile(context).absolutePath
+    fun tokensPath(context: Context): String = tokensFile(context).absolutePath
+
+    private fun copyAssetIfNeeded(context: Context, assetName: String) {
+        val out = File(modelsDir(context), assetName)
+        if (out.exists() && out.length() > 0) return
+        try {
+            context.assets.open(assetName).use { input ->
+                out.outputStream().use { output -> input.copyTo(output) }
+            }
+        } catch (t: Throwable) {
+            out.delete()
+        }
     }
 
-    fun modelPath(context: Context): String =
-        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY_MODEL, "")!!
-
-    fun tokensPath(context: Context): String =
-        context.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY_TOKENS, "")!!
-
-    /** 把用户选中的 model/tokens/vad 文件拷贝到内部目录并登记 */
+    /** 手动导入兜底：把用户选中的 model/tokens/vad 文件拷贝到 models 目录 */
     fun importFile(context: Context, uri: Uri, displayName: String): Boolean {
         val targetName = when {
             displayName.endsWith(".onnx") && displayName.contains("vad") -> FILE_VAD
@@ -56,13 +71,6 @@ object ModelManager {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 out.outputStream().use { output -> input.copyTo(output) }
             }
-            val key = when (targetName) {
-                FILE_VAD -> KEY_VAD
-                FILE_TOKENS -> KEY_TOKENS
-                else -> KEY_MODEL
-            }
-            context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-                .edit().putString(key, out.absolutePath).apply()
             true
         } catch (t: Throwable) {
             false
@@ -74,10 +82,9 @@ object ModelManager {
         SherpaSenseVoiceEngine(modelPath(context), tokensPath(context))
 
     fun createVad(context: Context): VadDetector {
-        val vPath = vadPath(context)
-        return if (vPath != null) {
+        return if (vadFile(context).exists()) {
             try {
-                SileroVad(modelPath = vPath)
+                SileroVad(modelPath = vadFile(context).absolutePath)
             } catch (t: Throwable) {
                 EnergyVadDetector()
             }
