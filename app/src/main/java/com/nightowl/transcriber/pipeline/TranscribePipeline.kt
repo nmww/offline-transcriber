@@ -33,6 +33,7 @@ object TranscribeBus {
     val progressText = MutableStateFlow("")
     val fileName = MutableStateFlow("")
     val resultText = MutableStateFlow("")
+    val elapsedText = MutableStateFlow("")   // 实际转写用时（完成时写入）
 
     @Volatile
     var cancelRequested = false
@@ -43,6 +44,7 @@ object TranscribeBus {
         progress.value = 0f
         progressText.value = ""
         resultText.value = ""
+        elapsedText.value = ""
         cancelRequested = false
     }
 }
@@ -69,12 +71,32 @@ class TranscribePipeline(private val context: Context) {
         val engine: AsrEngine = ModelManager.createEngine(context)
         val vad: VadDetector = ModelManager.createVad(context)
         val resultBuilder = StringBuilder()
+        val startedAt = System.currentTimeMillis()
+        val accumulated = ArrayList<Segment>()
+        var skippedSegments = 0
+
+        /** 识别一个语段并流式追加（空结果计数，不中断流水线） */
+        fun handleSegment(seg: com.nightowl.transcriber.engine.VadSegment) {
+            val text = engine.transcribe(seg.samples)
+            if (text.isNotBlank()) {
+                // 绝对时间来自 VAD 内部维护的样本偏移，精确到帧
+                val startMs = seg.startSample * 1000L / 16000
+                val endMs = startMs + seg.samples.size * 1000L / 16000
+                val item = Segment(accumulated.size, text, startMs, endMs)
+                accumulated.add(item)
+                // ✦ 流式追加：UI 立刻刷新这一段
+                TranscribeBus.segments.value = accumulated.toList()
+                if (resultBuilder.isNotEmpty()) resultBuilder.append("\n\n")
+                resultBuilder.append(text)
+                TranscribeBus.resultText.value = resultBuilder.toString()
+            } else {
+                skippedSegments++
+            }
+        }
 
         try {
             val totalMs = extractor.durationMs(uri)
             TranscribeBus.status.value = Status.Running
-
-            val accumulated = ArrayList<Segment>()
 
             extractor.extract(
                 uri = uri,
@@ -86,32 +108,23 @@ class TranscribePipeline(private val context: Context) {
                 onChunk = { chunk ->
                     if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@extract
 
-                    // 喂 VAD：按窗口切片
+                    // 喂 VAD：按窗口切片（尾帧不足窗口时丢弃，<32ms 无影响）
                     var offset = 0
-                    while (offset < chunk.size) {
-                        val len = kotlin.math.min(vad.windowSize, chunk.size - offset)
-                        val frame = chunk.copyOfRange(offset, offset + len)
-                        offset += len
-                        val seg = vad.accept(frame)
-
-                        if (seg != null && seg.samples.isNotEmpty()) {
-                            val text = engine.transcribe(seg.samples)
-                            if (text.isNotBlank()) {
-                                // 绝对时间来自 VAD 内部维护的样本偏移，精确到帧
-                                val startMs = seg.startSample * 1000L / 16000
-                                val endMs = startMs + seg.samples.size * 1000L / 16000
-                                val item = Segment(accumulated.size, text, startMs, endMs)
-                                accumulated.add(item)
-                                // ✦ 流式追加：UI 立刻刷新这一段
-                                TranscribeBus.segments.value = accumulated.toList()
-                                if (resultBuilder.isNotEmpty()) resultBuilder.append("\n\n")
-                                resultBuilder.append(text)
-                                TranscribeBus.resultText.value = resultBuilder.toString()
-                            }
+                    while (offset + vad.windowSize <= chunk.size) {
+                        val frame = chunk.copyOfRange(offset, offset + vad.windowSize)
+                        offset += vad.windowSize
+                        // ✦ 关键：一次喂入可能产出多段，必须全部处理
+                        for (seg in vad.accept(frame)) {
+                            handleSegment(seg)
                         }
                     }
                 }
             )
+
+            // ✦ 关键：音频喂完必须 flush，把 VAD 内部残余语音冲出（否则结尾整段丢失）
+            for (seg in vad.flush()) {
+                handleSegment(seg)
+            }
 
             if (TranscribeBus.cancelRequested) {
                 TranscribeBus.status.value = Status.Cancelled
@@ -124,6 +137,7 @@ class TranscribePipeline(private val context: Context) {
             TranscribeBus.resultText.value = finalText
             TranscribeBus.progress.value = 1f
             TranscribeBus.segments.value = accumulated.toList()
+            TranscribeBus.elapsedText.value = fmtHuman(System.currentTimeMillis() - startedAt)
             saveResults(uri, displayName, accumulated, formatter)
             TranscribeBus.status.value = Status.Done
             Result.success(finalText)
@@ -163,6 +177,12 @@ class TranscribePipeline(private val context: Context) {
             val s = totalSec % 60
             return if (h > 0) String.format("%d:%02d:%02d", h, m, s)
             else String.format("%d:%02d", m, s)
+        }
+
+        /** 人类可读的耗时（xx分xx秒），用于「转写用时」展示 */
+        fun fmtHuman(ms: Long): String {
+            val totalSec = ms / 1000
+            return if (totalSec >= 60) "${totalSec / 60}分${totalSec % 60}秒" else "${totalSec}秒"
         }
     }
 }
