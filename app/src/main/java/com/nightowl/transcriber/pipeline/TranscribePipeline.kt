@@ -87,7 +87,7 @@ class TranscribePipeline(private val context: Context) {
         val engine: AsrEngine = ModelManager.createEngine(context)
         com.nightowl.transcriber.diag.OTLog.i("OTDiag", "ASR engine created OK")
         com.nightowl.transcriber.diag.OTLog.i("OTDiag", "creating VAD…")
-        val vad: VadDetector = ModelManager.createVad(context)
+        var vad: VadDetector = ModelManager.createVad(context)
         com.nightowl.transcriber.diag.OTLog.i("OTDiag", "VAD created OK")
         val resultBuilder = StringBuilder()
         val startedAt = System.currentTimeMillis()
@@ -97,6 +97,9 @@ class TranscribePipeline(private val context: Context) {
         var fedChunks = 0
         var fedSamples = 0L
         var peakAmp = 0f
+        // ✦ 前 4 秒音频转储（Silero 无输出时落盘供离线分析）
+        val debugBuf = FloatArray(64000)
+        var debugLen = 0
 
         // ✦ 明确告知用户当前处于"加载模型"阶段（首次加载需数秒，不是卡死）
         TranscribeBus.status.value = Status.Preparing
@@ -132,45 +135,74 @@ class TranscribePipeline(private val context: Context) {
             val totalMs = extractor.durationMs(uri)
             TranscribeBus.status.value = Status.Running
 
-            extractor.extract(
-                uri = uri,
-                onProgress = { ms, total ->
-                    val p = if (total > 0) (ms.toFloat() / total).coerceIn(0f, 1f) else 0f
-                    TranscribeBus.progress.value = p
-                    TranscribeBus.progressText.value = "${fmtTime(ms)} / ${fmtTime(total)}"
-                },
-                onChunk = { chunk ->
-                    if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@extract
+            /** 一遍完整解码+VAD+识别（Silero 无输出时用能量 VAD 再跑一遍） */
+            suspend fun runPass(v: VadDetector) {
+                extractor.extract(
+                    uri = uri,
+                    onProgress = { ms, total ->
+                        val p = if (total > 0) (ms.toFloat() / total).coerceIn(0f, 1f) else 0f
+                        TranscribeBus.progress.value = p
+                        TranscribeBus.progressText.value = "${fmtTime(ms)} / ${fmtTime(total)}"
+                    },
+                    onChunk = { chunk ->
+                        if (!coroutineContext.isActive || TranscribeBus.cancelRequested) return@extract
 
-                    fedChunks++
-                    fedSamples += chunk.size
-                    if (chunk.isNotEmpty()) {
-                        val p = chunk.maxOf { kotlin.math.abs(it) }
-                        if (p > peakAmp) peakAmp = p
-                    }
+                        fedChunks++
+                        fedSamples += chunk.size
+                        if (chunk.isNotEmpty()) {
+                            val p = chunk.maxOf { kotlin.math.abs(it) }
+                            if (p > peakAmp) peakAmp = p
+                        }
+                        if (debugLen < debugBuf.size) {
+                            val n = minOf(chunk.size, debugBuf.size - debugLen)
+                            System.arraycopy(chunk, 0, debugBuf, debugLen, n)
+                            debugLen += n
+                        }
 
-                    // 喂 VAD：按窗口切片（尾帧不足窗口时丢弃，<32ms 无影响）
-                    var offset = 0
-                    while (offset + vad.windowSize <= chunk.size) {
-                        val frame = chunk.copyOfRange(offset, offset + vad.windowSize)
-                        offset += vad.windowSize
-                        // ✦ 关键：一次喂入可能产出多段，必须全部处理
-                        for (seg in vad.accept(frame)) {
-                            handleSegment(seg)
+                        // 喂 VAD：按窗口切片（尾帧不足窗口时丢弃，<32ms 无影响）
+                        var offset = 0
+                        while (offset + v.windowSize <= chunk.size) {
+                            val frame = chunk.copyOfRange(offset, offset + v.windowSize)
+                            offset += v.windowSize
+                            // ✦ 关键：一次喂入可能产出多段，必须全部处理
+                            for (seg in v.accept(frame)) {
+                                handleSegment(seg)
+                            }
                         }
                     }
-                }
-            )
+                )
 
-            // ✦ 关键：音频喂完必须 flush，把 VAD 内部残余语音冲出（否则结尾整段丢失）
-            for (seg in vad.flush()) {
-                handleSegment(seg)
+                // ✦ 关键：音频喂完必须 flush，把 VAD 内部残余语音冲出（否则结尾整段丢失）
+                for (seg in v.flush()) {
+                    handleSegment(seg)
+                }
             }
+
+            runPass(vad)
 
             com.nightowl.transcriber.diag.OTLog.i(
                 "OTDiag",
                 "decode done: chunks=$fedChunks totalSamples=$fedSamples≈${fedSamples / 16000}s peak=$peakAmp segs=${accumulated.size} skipped=$skippedSegments"
             )
+
+            // ✦ 兜底：Silero 全程没切出任何段，但音频明显有声 → 换能量 VAD 重跑一遍
+            if (accumulated.isEmpty() && skippedSegments == 0 &&
+                peakAmp > 0.05f && !TranscribeBus.cancelRequested
+            ) {
+                dumpDebugPcm(debugLen, debugBuf)
+                com.nightowl.transcriber.diag.OTLog.i(
+                    "OTDiag",
+                    "Silero 0段(peak=$peakAmp) → 换能量VAD重跑（前4s已转储 debug_first4s.pcm）"
+                )
+                runCatching { vad.close() }
+                vad = EnergyVadDetector()
+                fedChunks = 0; fedSamples = 0; peakAmp = 0f
+                runPass(vad)
+                com.nightowl.transcriber.diag.OTLog.i(
+                    "OTDiag",
+                    "fallback done: segs=${accumulated.size} skipped=$skippedSegments"
+                )
+            }
 
             if (TranscribeBus.cancelRequested) {
                 TranscribeBus.status.value = Status.Cancelled
@@ -193,6 +225,21 @@ class TranscribePipeline(private val context: Context) {
         } finally {
             engine.close()
             vad.close()
+        }
+    }
+
+    /** 把前 4 秒重采样音频写成 16bit PCM，供离线分析（Silero 无输出时才调用） */
+    private fun dumpDebugPcm(len: Int, buf: FloatArray) {
+        runCatching {
+            java.io.DataOutputStream(
+                java.io.BufferedOutputStream(
+                    java.io.FileOutputStream(java.io.File(context.filesDir, "debug_first4s.pcm"))
+                )
+            ).use { out ->
+                for (i in 0 until len) {
+                    out.writeShort((buf[i].coerceIn(-1f, 1f) * 32767).toInt())
+                }
+            }
         }
     }
 
