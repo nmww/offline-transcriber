@@ -27,7 +27,7 @@ object OTLog {
     private const val TAG = "OTLog"
     private const val MAX_LOG_BYTES = 2L * 1024 * 1024
     private const val MAX_ROTATIONS = 3          // app.log.1 ~ app.log.2
-    private const val SNAPSHOT_BYTES = 256 * 1024
+    private const val SNAPSHOT_BYTES = 256L * 1024
     private const val MAX_CRASH_FILES = 10       // 崩溃/异常退出报告最多保留 10 份
 
     private lateinit var dir: File
@@ -76,7 +76,7 @@ object OTLog {
                 File(dir, "崩溃-${fmt.format(Date())}.log").writeText(
                     "时间: ${Date()}\n线程: ${t.name}\n版本: $appVersion\n设备: ${Build.MANUFACTURER} ${Build.MODEL} / Android ${Build.VERSION.RELEASE}\n\n" +
                         "===== 堆栈 =====\n$sw\n\n===== 事故前应用日志（末 100 行）=====\n" +
-                        tailOf(File(dir, "app.log"), SNAPSHOT_BYTES).lineSequence().takeLast(100).joinToString("\n") + "\n"
+                        tailOf(File(dir, "app.log"), SNAPSHOT_BYTES).split('\n').takeLast(100).joinToString("\n") + "\n"
                 )
                 trimReports()
             }
@@ -172,15 +172,14 @@ object OTLog {
         }
     }
 
-    private fun tailOf(f: File, max: Long): String =
-        if (!f.exists() || f.length() <= max) f.takeIf { it.exists() }?.readText() ?: ""
-        else {
-            val raf = java.io.RandomAccessFile(f, "r")
+    private fun tailOf(f: File, max: Long): String {
+        if (!f.exists() || f.length() <= max) return if (f.exists()) f.readText() else ""
+        val buf = ByteArray(max.toInt())
+        java.io.RandomAccessFile(f, "r").use { raf ->
             raf.seek(f.length() - max)
-            // 跳过可能截断的首行
-            raf.readLine()
-            val s = raf.readBytes().toString(Charsets.UTF_8)
-            raf.close()
-            s
+            raf.readFully(buf)
         }
+        // 跳过可能被截断的首行
+        return String(buf, Charsets.UTF_8).substringAfter('\n', missingDelimiterValue = "")
+    }
 }
