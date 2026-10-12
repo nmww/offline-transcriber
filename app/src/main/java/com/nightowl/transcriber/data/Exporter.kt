@@ -65,7 +65,9 @@ object Exporter {
         val m = (ms % 3_600_000) / 60_000
         val s = (ms % 60_000) / 1000
         return if (compact) {
-            String.format(Locale.US, "%02d:%02d:%02d", h, m, s)
+            // 对话语段排版：一小时以内用 mm:ss，更清爽（规格书 3.4 示例样式）
+            if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s)
+            else String.format(Locale.US, "%02d:%02d", m, s)
         } else {
             val millis = ms % 1000
             String.format(Locale.US, "%02d:%02d:%02d,%03d", h, m, s, millis)
