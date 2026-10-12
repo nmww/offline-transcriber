@@ -39,6 +39,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // ✦ 诊断临时开启：允许 run-as 访问私有目录排查 native exit 问题（定位后移除）
+            isDebuggable = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (project.hasProperty("ksFile")) {
                 signingConfig = signingConfigs.getByName("release")
