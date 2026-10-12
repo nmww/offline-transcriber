@@ -190,6 +190,35 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.size(24.dp))
 
+        // ── 异常与日志 ──
+        val logScope = androidx.compose.runtime.rememberCoroutineScope()
+        var reportFiles by remember { mutableStateOf(com.nightowl.transcriber.diag.OTLog.reportFiles()) }
+        Group {
+            RowTile(
+                title = "异常与日志",
+                subtitle = if (reportFiles.isEmpty()) "暂无异常记录" else "共 ${reportFiles.size} 份异常报告，点击条目可分享给开发者"
+            )
+            reportFiles.take(5).forEach { f ->
+                RowTile(
+                    title = f.name,
+                    subtitle = "${f.length() / 1024}KB",
+                    onClick = { shareLogFile(ctx, f) }
+                )
+            }
+            RowTile(
+                title = "清空全部日志",
+                subtitle = "包括应用运行日志与异常报告",
+                onClick = {
+                    logScope.launch {
+                        com.nightowl.transcriber.diag.OTLog.clearAll(ctx)
+                        reportFiles = com.nightowl.transcriber.diag.OTLog.reportFiles()
+                    }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.size(24.dp))
+
         Group {
             RowTile(
                 title = "深色模式",
@@ -208,6 +237,22 @@ fun SettingsScreen(
                 }
             )
         }
+    }
+}
+
+/** 分享一份日志文件（FileProvider，无需存储权限） */
+private fun shareLogFile(ctx: android.content.Context, f: java.io.File) {
+    runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            ctx, ctx.packageName + ".fileprovider", f)
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        ctx.startActivity(android.content.Intent.createChooser(intent, "分享日志：${f.name}"))
+    }.onFailure {
+        android.widget.Toast.makeText(ctx, "分享失败：${it.message}", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 
