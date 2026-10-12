@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/panda_splash">
+    <target
+        android:name="head"
+        android:animation="@animator/ot_draw_head" />
+    <target
+        android:name="ear_l"
+        android:animation="@animator/ot_draw_ear_l" />
+    <target
+        android:name="ear_r"
+        android:animation="@animator/ot_draw_ear_r" />
+    <target
+        android:name="eye_ring_l"
+        android:animation="@animator/ot_draw_eye_ring_l" />
+    <target
+        android:name="eye_ring_r"
+        android:animation="@animator/ot_draw_eye_ring_r" />
+    <target
+        android:name="eye_l"
+        android:animation="@animator/ot_draw_eye_l" />
+    <target
+        android:name="eye_l_fill"
+        android:animation="@animator/ot_fill_eye_l" />
+    <target
+        android:name="eye_r"
+        android:animation="@animator/ot_draw_eye_r" />
+    <target
+        android:name="eye_r_fill"
+        android:animation="@animator/ot_fill_eye_r" />
+    <target
+        android:name="nose"
+        android:animation="@animator/ot_draw_nose" />
+    <target
+        android:name="nose_fill"
+        android:animation="@animator/ot_fill_nose" />
+    <target
+        android:name="mouth"
+        android:animation="@animator/ot_draw_mouth" />
+</animated-vector>
