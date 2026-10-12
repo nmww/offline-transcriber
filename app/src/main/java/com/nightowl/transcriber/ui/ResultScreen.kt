@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -79,13 +80,28 @@ fun ResultScreen(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-            androidx.compose.material3.TextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodyLarge
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp)
+            ) {
+                androidx.compose.material3.TextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    // 去掉输入框默认的下划线/底色，做成纯文稿观感
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                    )
+                )
             }
         }
 
@@ -106,19 +122,25 @@ fun ResultScreen(
 
         Spacer(modifier = Modifier.size(12.dp))
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Button(onClick = { copyText(context, text) }, modifier = Modifier.weight(1f)) {
-                Text("复制")
-            }
+            val btnShape = RoundedCornerShape(14.dp)
+            val btnHeight = Modifier.height(48.dp)
+            Button(
+                onClick = { copyText(context, text) },
+                modifier = Modifier.weight(1f).then(btnHeight),
+                shape = btnShape
+            ) { Text("复制") }
             Spacer(modifier = Modifier.size(12.dp))
             OutlinedButton(
                 onClick = { shareText(context, Exporter.format(segments, format)) },
-                modifier = Modifier.weight(1f)
-            ) { Text("txt") }
+                modifier = Modifier.weight(1f).then(btnHeight),
+                shape = btnShape
+            ) { Text("导出 txt") }
             Spacer(modifier = Modifier.size(12.dp))
             OutlinedButton(
                 onClick = { shareText(context, Exporter.toSrt(segments)) },
-                modifier = Modifier.weight(1f)
-            ) { Text("srt") }
+                modifier = Modifier.weight(1f).then(btnHeight),
+                shape = btnShape
+            ) { Text("字幕 srt") }
         }
         Spacer(modifier = Modifier.size(16.dp))
     }
