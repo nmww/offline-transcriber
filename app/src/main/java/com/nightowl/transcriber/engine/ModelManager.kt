@@ -60,15 +60,21 @@ object ModelManager {
 
     private fun copyAssetIfNeeded(context: Context, assetName: String) {
         val out = File(modelsDir(context), assetName)
-        if (out.exists() && out.length() > 0) return
+        if (out.exists() && out.length() > 0 && baseVerFile(context).readText() == BASE_VER) return
         try {
             context.assets.open(assetName).use { input ->
                 out.outputStream().use { output -> input.copyTo(output) }
             }
+            baseVerFile(context).writeText(BASE_VER)
         } catch (t: Throwable) {
             out.delete()
         }
     }
+
+    /** 内置基础文件的版本标记：assets 更新时递增，触发覆盖重解包 */
+    private const val BASE_VER = "1"
+    private fun baseVerFile(context: Context): File =
+        File(modelsDir(context), "basefiles.ver")
 
     // ---------- 公共目录持久化（Android 10+，卸载重装不丢） ----------
 
