@@ -70,9 +70,9 @@ class TranscribePipeline(private val context: Context) {
         val extractor = AudioExtractor(context)
 
         // ✦ 诊断面包屑：模型文件状态（文件大小/存在性）——native 层 exit 无法被 Java 捕获，
-        //   必须在进入引擎前把状态写进 logcat
-        android.util.Log.i("OTDiag", "pipeline start uri=$uri name=$displayName")
-        android.util.Log.i(
+        //   必须在进入引擎前把状态写进日志（OTLog：logcat 镜像 + 文件双写）
+        com.nightowl.transcriber.diag.OTLog.i("OTDiag", "pipeline start uri=$uri name=$displayName")
+        com.nightowl.transcriber.diag.OTLog.i(
             "OTDiag",
             "model=${ModelManager.modelFile(context).exists()}/${ModelManager.modelFile(context).length()}" +
                 " tokens=${ModelManager.tokensFile(context).exists()}/${ModelManager.tokensFile(context).length()}" +
@@ -83,12 +83,12 @@ class TranscribePipeline(private val context: Context) {
             return@withContext Result.failure(IllegalStateException("model not ready"))
         }
 
-        android.util.Log.i("OTDiag", "creating ASR engine…")
+        com.nightowl.transcriber.diag.OTLog.i("OTDiag", "creating ASR engine…")
         val engine: AsrEngine = ModelManager.createEngine(context)
-        android.util.Log.i("OTDiag", "ASR engine created OK")
-        android.util.Log.i("OTDiag", "creating VAD…")
+        com.nightowl.transcriber.diag.OTLog.i("OTDiag", "ASR engine created OK")
+        com.nightowl.transcriber.diag.OTLog.i("OTDiag", "creating VAD…")
         val vad: VadDetector = ModelManager.createVad(context)
-        android.util.Log.i("OTDiag", "VAD created OK")
+        com.nightowl.transcriber.diag.OTLog.i("OTDiag", "VAD created OK")
         val resultBuilder = StringBuilder()
         val startedAt = System.currentTimeMillis()
         val accumulated = ArrayList<Segment>()
