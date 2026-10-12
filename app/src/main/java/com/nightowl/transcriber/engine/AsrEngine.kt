@@ -36,10 +36,16 @@ interface VadDetector {
     val windowSize: Int
 
     /**
-     * 喂入采样；返回非空时表示产出一个完整语段（含绝对起始样本位置）。
-     * 调用方每次喂入的样本数应 <= [windowSize]。
+     * 喂入采样（应 <= [windowSize]）；返回本次新产出的【全部】语段
+     * （一次喂入可能触发多段，例如 maxSpeechDuration 强切，必须全部取出）。
      */
-    fun accept(samples: FloatArray): VadSegment?
+    fun accept(samples: FloatArray): List<VadSegment>
+
+    /**
+     * 音频结束时调用：把引擎内部残余（未检测到静音收尾的语音）冲出为语段。
+     * 不调用此方法会丢失音频结尾的整段内容。
+     */
+    fun flush(): List<VadSegment>
 
     fun reset()
     fun close()
