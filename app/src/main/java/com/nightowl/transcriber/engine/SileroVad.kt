@@ -7,9 +7,11 @@ import com.k2fsa.sherpa.onnx.VadModelConfig
 /**
  * Silero VAD 封装（629KB，sherpa-onnx v1.10.30 Kotlin API）。
  *
- * 作用：跳过静音、自动按自然停顿分句，让长音频既省时、又让输出天然形成“对话语段”。
- * startSample 由官方 Vad 内部维护（相对整段音频的绝对样本偏移），时间戳因此精确。
- * 无 Silero 模型时自动回退 [EnergyVadDetector]（能量门限，零依赖）。
+ * 关键正确性规则（照官方 VadAsr demo）：
+ *   1. 每次 acceptWaveform 之后必须【循环】 empty()/front()/pop() 把队列取空
+ *      —— 一次喂入可能产出多段（maxSpeechDuration 强切、快速停顿等）
+ *   2. 音频喂完必须调用 flush()，把内部尚在缓冲的语音（没有静音收尾）冲出
+ *      —— 否则整条结尾语段会丢失
  */
 class SileroVad(
     modelPath: String,
@@ -38,13 +40,27 @@ class SileroVad(
         )
     )
 
-    override fun accept(samples: FloatArray): VadSegment? {
+    override fun accept(samples: FloatArray): List<VadSegment> {
         vad.acceptWaveform(samples)
-        if (vad.empty()) return null
-        val seg = vad.front()
-        vad.pop()
-        if (seg.samples.isEmpty()) return null
-        return VadSegment(startSample = seg.start, samples = seg.samples.copyOf())
+        return drain()
+    }
+
+    override fun flush(): List<VadSegment> {
+        vad.flush()
+        return drain()
+    }
+
+    /** 把官方 VAD 内部队列全部取出 */
+    private fun drain(): List<VadSegment> {
+        val out = ArrayList<VadSegment>(2)
+        while (!vad.empty()) {
+            val seg = vad.front()
+            vad.pop()
+            if (seg.samples.isNotEmpty()) {
+                out.add(VadSegment(startSample = seg.start, samples = seg.samples.copyOf()))
+            }
+        }
+        return out
     }
 
     override fun reset() {
@@ -74,7 +90,7 @@ class EnergyVadDetector(
     private var silenceFrames = 0
     private var inSpeech = false
 
-    override fun accept(samples: FloatArray): VadSegment? {
+    override fun accept(samples: FloatArray): List<VadSegment> {
         val frameStart = consumedSamples
         consumedSamples += samples.size
 
@@ -92,6 +108,11 @@ class EnergyVadDetector(
             speechFrames = 0
         }
 
+        if (inSpeech) {
+            if (collected.isEmpty()) collectedStart = frameStart
+            collected.addAll(samples.toList())
+        }
+
         val shouldFlush = inSpeech && silenceFrames >= minSilenceFrames
         if (shouldFlush && collected.isNotEmpty()) {
             val out = collected.toFloatArray()
@@ -99,16 +120,22 @@ class EnergyVadDetector(
             collected.clear()
             inSpeech = false
             silenceFrames = 0
-            return VadSegment(startSample = start.toInt(), samples = out)
+            return listOf(VadSegment(startSample = start.toInt(), samples = out))
         }
+        return emptyList()
+    }
 
-        if (inSpeech) {
-            if (collected.isEmpty()) collectedStart = frameStart
-            collected.addAll(samples.toList())
-        } else if (collected.isNotEmpty()) {
-            collected.clear()   // 防静音无限累积
+    override fun flush(): List<VadSegment> {
+        // 音频结束：把仍在缓冲中的语音冲出（不做静音等待）
+        return if (inSpeech && collected.isNotEmpty()) {
+            val out = collected.toFloatArray()
+            val start = collectedStart
+            collected.clear()
+            inSpeech = false
+            listOf(VadSegment(startSample = start.toInt(), samples = out))
+        } else {
+            emptyList()
         }
-        return null
     }
 
     override fun reset() {
