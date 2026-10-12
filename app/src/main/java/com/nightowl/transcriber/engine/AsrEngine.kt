@@ -4,8 +4,8 @@ package com.nightowl.transcriber.engine
  * ASR 引擎适配层。
  *
  * sherpa-onnx v1.10.30 官方 Kotlin API 源码已随工程内置
- * （app/src/main/java/com/k2fsa/sherpa/onnx/*.kt），
- * 原生库 jniLibs/arm64-v8a/{libsherpa-onnx-jni.so, libonnxruntime.so}。
+ * （位于 com.k2fsa.sherpa.onnx 包，含 OfflineRecognizer 与 Vad 等），
+ * 原生库 jniLibs/arm64-v8a/ 下有 libsherpa-onnx-jni.so 与 libonnxruntime.so。
  * 因此不再需要任何 maven 坐标依赖。
  */
 
