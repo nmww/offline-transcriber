@@ -173,7 +173,13 @@ class MainActivity : ComponentActivity() {
                             screen = Screen.RESULT
                         },
                         onOpenTask = { screen = Screen.WORKING },
-                        onCancelTask = { TranscribeService.stop(this) }
+                        onCancelTask = { TranscribeService.stop(this) },
+                        onDelete = { item ->
+                            lifecycleScope.launch { db.transcriptDao().delete(item.id) }
+                        },
+                        onDeleteAll = {
+                            lifecycleScope.launch { db.transcriptDao().deleteAll() }
+                        }
                     )
                     Screen.WORKING -> TranscribingScreen(
                         onCancel = {
