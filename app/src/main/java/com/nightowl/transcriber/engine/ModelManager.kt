@@ -60,12 +60,15 @@ object ModelManager {
 
     private fun copyAssetIfNeeded(context: Context, assetName: String) {
         val out = File(modelsDir(context), assetName)
-        if (out.exists() && out.length() > 0 && baseVerFile(context).readText() == BASE_VER) return
+        val ver = baseVerFile(context)
+        if (out.exists() && out.length() > 0 && ver.exists() &&
+            runCatching { ver.readText() }.getOrNull() == BASE_VER
+        ) return
         try {
             context.assets.open(assetName).use { input ->
                 out.outputStream().use { output -> input.copyTo(output) }
             }
-            baseVerFile(context).writeText(BASE_VER)
+            ver.writeText(BASE_VER)
         } catch (t: Throwable) {
             out.delete()
         }
