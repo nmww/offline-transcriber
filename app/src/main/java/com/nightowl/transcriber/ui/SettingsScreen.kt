@@ -40,6 +40,9 @@ fun SettingsScreen(
     styleCode: String,
     showTimestamps: Boolean,
     autoSave: Boolean,
+    downloadState: com.nightowl.transcriber.pipeline.ModelDownloader.State,
+    onDownloadModels: () -> Unit,
+    onCancelDownload: () -> Unit,
     onPickModel: () -> Unit,
     onThemeChange: (String) -> Unit,
     onStyleChange: (String) -> Unit,
@@ -67,9 +70,43 @@ fun SettingsScreen(
         Group {
             RowTile(
                 title = "识别模型",
-                subtitle = if (modelReady) "SenseVoice INT8 · 已载入" else "未导入模型，点击导入",
+                subtitle = if (modelReady) "SenseVoice INT8 · 已载入" else "未就绪：下载或手动导入",
                 onClick = onPickModel
             )
+            when (val st = downloadState) {
+                is com.nightowl.transcriber.pipeline.ModelDownloader.State.Downloading -> {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(
+                            "下载中 ${st.downloadedMB}MB / ${st.totalMB}MB",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.size(6.dp))
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { st.fileProgress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(
+                            "点击取消（已下载部分支持断点续传）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.clickable { onCancelDownload() }
+                        )
+                    }
+                }
+                else -> {
+                    RowTile(
+                        title = if (modelReady) "重新下载模型" else "⬇ 一键下载模型（228MB）",
+                        subtitle = when (st) {
+                            is com.nightowl.transcriber.pipeline.ModelDownloader.State.Failed -> "上次失败：${st.reason}，点击重试"
+                            is com.nightowl.transcriber.pipeline.ModelDownloader.State.Done -> "已完成，点击可重新下载"
+                            else -> "WiFi 下约 2~5 分钟，支持断点续传"
+                        },
+                        onClick = onDownloadModels
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.size(24.dp))
