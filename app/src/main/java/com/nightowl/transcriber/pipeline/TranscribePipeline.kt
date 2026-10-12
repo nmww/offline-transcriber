@@ -104,6 +104,8 @@ class TranscribePipeline(private val context: Context) {
         // ✦ 前 4 秒音频转储（VAD 无输出时落盘供离线分析）
         val debugBuf = FloatArray(64000)
         var debugLen = 0
+        // ✦ 兜底阶段标志：进入能量 VAD / 硬切后给用户明确状态（避免 99% 假死观感）
+        var inFallback = false
 
         // ✦ 明确告知用户当前处于"加载模型"阶段（首次加载需数秒，不是卡死）
         TranscribeBus.status.value = Status.Preparing
@@ -132,6 +134,11 @@ class TranscribePipeline(private val context: Context) {
                 TranscribeBus.resultText.value = resultBuilder.toString()
             } else {
                 skippedSegments++
+            }
+            // 兜底阶段：每出一段就刷新状态（兜底靠识别出结果，进度条只反映音频重放，会停在 99%）
+            if (inFallback) {
+                TranscribeBus.progressText.value =
+                    "环境音兜底识别中… 已出 ${accumulated.size} 段，请稍候"
             }
         }
 
@@ -193,7 +200,7 @@ class TranscribePipeline(private val context: Context) {
                                 val p = (total.toFloat() / firstPassSamples).coerceIn(0f, 1f)
                                 TranscribeBus.progress.value = p
                                 TranscribeBus.progressText.value =
-                                    "重新分析音频…（已跳过解码） ${fmtTime(total * 1000L / 16000)} / ${fmtTime(firstPassSamples * 1000L / 16000)}"
+                                    "重放分析 ${fmtTime(total * 1000L / 16000)} / ${fmtTime(firstPassSamples * 1000L / 16000)}"
                             }
                         }
                     }
@@ -249,6 +256,7 @@ class TranscribePipeline(private val context: Context) {
                 runCatching { vad.close() }
                 vad = EnergyVadDetector()
                 fedChunks = 0; fedSamples = 0; peakAmp = 0f; debugLen = 0
+                inFallback = true
                 feedFromCache { chunk -> processChunk(vad, chunk) }
                 for (seg in vad.flush()) {
                     handleSegment(seg)
@@ -270,6 +278,7 @@ class TranscribePipeline(private val context: Context) {
                     "能量VAD也0段(peak=$peakAmp) → 固定30s窗口直切（转储 debug_energy.pcm）"
                 )
                 fedChunks = 0; fedSamples = 0; peakAmp = 0f; debugLen = 0
+                inFallback = true
                 val win = FloatArray(30 * 16000)
                 var winLen = 0
                 var absSamples = 0L
