@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 圆角底：iOS 蓝主色 -->
+    <path
+        android:fillColor="#007AFF"
+        android:pathData="M18,0L90,0A18,18 0 0 1 108,18L108,90A18,18 0 0 1 90,108L18,108A18,18 0 0 1 0,90L0,18A18,18 0 0 1 18,0z" />
+    <!-- 三条“文字”：呼应“提取文字”的产品语义 -->
+    <path android:fillColor="#FFFFFF" android:pathData="M28,38h52v6h-52z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M28,51h40v6h-40z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M28,64h46v6h-46z" />
+</vector>
