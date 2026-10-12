@@ -30,6 +30,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,21 +39,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nightowl.transcriber.data.Transcript
+import com.nightowl.transcriber.pipeline.Status
+import com.nightowl.transcriber.pipeline.TranscribeBus
 import com.nightowl.transcriber.pipeline.TranscribePipeline
 
 /**
  * 首页（规格书 3.3 ①）——一屏只有一件事：选择文件。
  *
  * 视觉要点：主操作为【全宽 · 66dp 高 · 18dp 圆角】大按钮，居中图标+文字；
- * 下方一条浅灰说明；再往下是「最近转写」列表或空态。
+ * 下方一条浅灰说明；再往下是「进行中任务」卡（仅转写时显示）与「最近转写」列表或空态。
  */
 @Composable
 fun HomeScreen(
     recent: List<Transcript>,
     onPickFile: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenResult: (Transcript) -> Unit
+    onOpenResult: (Transcript) -> Unit,
+    onOpenTask: () -> Unit,
+    onCancelTask: () -> Unit
 ) {
+    val taskStatus by TranscribeBus.status.collectAsState()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -124,6 +132,19 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.size(34.dp))
 
+        // ── 进行中任务卡：转写中在首页可见，可点进去看实时进度，也可直接取消 ──
+        if (taskStatus is Status.Preparing || taskStatus is Status.Running) {
+            ActiveTaskCard(
+                name = TranscribeBus.fileName.collectAsState().value,
+                progress = TranscribeBus.progress.collectAsState().value,
+                progressText = TranscribeBus.progressText.collectAsState().value,
+                preparing = taskStatus is Status.Preparing,
+                onOpen = onOpenTask,
+                onCancel = onCancelTask
+            )
+            Spacer(modifier = Modifier.size(22.dp))
+        }
+
         Text(
             "最近转写",
             style = MaterialTheme.typography.labelSmall,
@@ -145,10 +166,72 @@ fun HomeScreen(
     }
 }
 
+/** 进行中任务卡：文件名 + 手绘细进度条（免版本兼容）+ 查看/取消 */
+@Composable
+private fun ActiveTaskCard(
+    name: String,
+    progress: Float,
+    progressText: String,
+    preparing: Boolean,
+    onOpen: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpen() },
+        shape = RoundedCornerShape(Tokens.Card.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (preparing) "正在准备…" else name.ifBlank { "转写中…" },
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.size(4.dp))
+                    Text(
+                        if (preparing) "加载识别模型中，请稍候" else progressText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                androidx.compose.material3.TextButton(onClick = onCancel) {
+                    Text("取消", color = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (!preparing) {
+                Spacer(modifier = Modifier.size(10.dp))
+                // 细进度条（手绘，避免 Material3 版本 API 差异）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress.coerceIn(0.01f, 1f))
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** 空态：圆形浅色图标底 + 双行文案，避免大片空白带来的"未完成感" */
 @Composable
-private fun EmptyState() {
-    Column(
+private fun EmptyState() {    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 36.dp),
