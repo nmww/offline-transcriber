@@ -134,6 +134,7 @@ class TranscribeService : LifecycleService() {
             .setContentTitle(title)
             .setContentText(text)
             .setProgress(100, progress, progress in 1..99)
+            .setOnlyAlertOnce(true)   // 进度持续刷新时不反复响铃/震动
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
