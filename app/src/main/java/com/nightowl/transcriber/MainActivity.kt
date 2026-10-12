@@ -87,17 +87,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        installCrashGuard()
+        com.nightowl.transcriber.diag.OTLog.init(this)   // 日志镜像 + 崩溃捕获 + 异常退出快照
         settings = SettingsStore(this)
         ModelManager.ensureBaseFiles(this)          // 解包内置 tokens/vad
         modelReady = ModelManager.isReady(this)
         askNotifications()
 
-        // 上次若发生异常退出，提示用户（日志已存 crash.log，便于反馈排查）
-        val crashLog = java.io.File(filesDir, "crash.log")
-        if (crashLog.exists()) {
-            Toast.makeText(this, "检测到上次异常退出，问题日志已保存", Toast.LENGTH_LONG).show()
-            crashLog.renameTo(java.io.File(filesDir, "crash.log.seen"))
+        // 兼容旧版 crash.log：存在则并入新日志体系（异常退出-时间.log）
+        val legacy = java.io.File(filesDir, "crash.log")
+        if (legacy.exists()) {
+            runCatching {
+                legacy.renameTo(java.io.File(
+                    com.nightowl.transcriber.diag.OTLog.logDir(this),
+                    "异常退出-legacy-${System.currentTimeMillis()}.log"))
+            }
+            Toast.makeText(this, "检测到上次异常退出，问题日志已保存（设置里可查看）", Toast.LENGTH_LONG).show()
         }
 
         // 模型下载完成 → 刷新就绪状态
@@ -206,18 +210,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 崩溃守卫：任何未捕获异常写入 crash.log（供反馈排查），再交回系统处理 */
-    private fun installCrashGuard() {
-        val prev = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            try {
-                java.io.File(filesDir, "crash.log").appendText(
-                    "==== ${java.util.Date()} thread=${t.name}\n" +
-                        android.util.Log.getStackTraceString(e) + "\n"
-                )
-            } catch (_: Throwable) {}
-            prev?.uncaughtException(t, e)
+    /** 崩溃守卫已升级为 diag.OTLog（应用内 logcat 镜像 + 崩溃报告 + 异常退出快照） */
+
+    override fun onDestroy() {
+        // 正常退出（用户按返回关闭）时清掉会话标记；
+        // 异常退出时这里不会执行，标记留给下次启动兜底快照
+        if (isFinishing) {
+            com.nightowl.transcriber.diag.OTLog.onAppExit()
         }
+        super.onDestroy()
     }
 
     private fun displayName(uri: Uri): String {        return try {
