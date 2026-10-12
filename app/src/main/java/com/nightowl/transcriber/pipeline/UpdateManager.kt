@@ -108,21 +108,46 @@ object UpdateManager {
         return buildOf(latest) > buildOf(seen)
     }
 
-    /** 下载最新 APK 到 cacheDir，完成后进入 ReadyToInstall */
+    /** 国内加速代理（按可用性实测排序），最后一个是 GitHub 原始直链兜底 */
+    private fun apkSources(apkUrl: String): List<String> = listOf(
+        "https://ghproxy.net/$apkUrl",
+        "https://gh-proxy.com/$apkUrl",
+        "https://ghfast.top/$apkUrl",
+        apkUrl
+    )
+
+    /** 下载最新 APK 到 cacheDir（多源 fallback + 断点续传），完成后进入 ReadyToInstall */
     suspend fun download(context: Context, info: ReleaseInfo): Boolean = withContext(Dispatchers.IO) {
         cancelRequested = false
         val out = File(context.cacheDir, "update-${info.tag}.apk")
-        var downloaded = if (out.exists() && out.name == "update-${info.tag}.apk") out.length() else 0L
-        // tag 变了就重下
-        if (out.exists() && out.length() == 0L) downloaded = 0
+        var downloaded = if (out.exists()) out.length() else 0L
 
-        try {
-            val conn = (URL(info.apkUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 20_000
-                readTimeout = 60_000
-                instanceFollowRedirects = true
-                if (downloaded > 0) setRequestProperty("Range", "bytes=$downloaded-")
+        for (src in apkSources(info.apkUrl)) {
+            if (cancelRequested) return@withContext false
+            try {
+                if (downloadFrom(src, out)) {
+                    context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+                        .edit().putString(KEY_LAST_SEEN, info.tag).apply()
+                    _state.value = State.ReadyToInstall(info, out)
+                    return@withContext true
+                }
+            } catch (t: Throwable) {
+                // 换下一个源（已下载字节保留，支持跨源续传）
             }
+        }
+        _state.value = if (cancelRequested) State.Idle else State.Failed("所有下载源均失败，请稍后重试")
+        false
+    }
+
+    private fun downloadFrom(source: String, out: File): Boolean {
+        var downloaded = if (out.exists()) out.length() else 0L
+        val conn = (URL(source).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            if (downloaded > 0) setRequestProperty("Range", "bytes=$downloaded-")
+        }
+        try {
             val code = conn.responseCode
             if (code !in 200..299) throw IllegalStateException("HTTP $code")
             val resuming = code == 206
@@ -134,10 +159,7 @@ object UpdateManager {
                     val buf = ByteArray(64 * 1024)
                     var lastEmit = 0L
                     while (true) {
-                        if (cancelRequested) {
-                            _state.value = State.Idle
-                            return@withContext false
-                        }
+                        if (cancelRequested) return false
                         val n = input.read(buf)
                         if (n == -1) break
                         fout.write(buf, 0, n)
@@ -153,13 +175,9 @@ object UpdateManager {
                     }
                 }
             }
-            context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
-                .edit().putString(KEY_LAST_SEEN, info.tag).apply()
-            _state.value = State.ReadyToInstall(info, out)
-            true
-        } catch (t: Throwable) {
-            _state.value = State.Failed(t.message ?: "下载失败")
-            false
+            return downloaded > 0
+        } finally {
+            conn.disconnect()
         }
     }
 
