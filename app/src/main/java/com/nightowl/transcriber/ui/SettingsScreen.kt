@@ -22,6 +22,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.nightowl.transcriber.engine.ModelManager
 import com.nightowl.transcriber.data.ExportFormat
 
@@ -126,6 +128,64 @@ fun SettingsScreen(
             )
             SwitchTile("显示时间段头", showTimestamps, onTimestampsChange)
             SwitchTile("转写完成自动保存", autoSave, onAutoSaveChange)
+        }
+
+        Spacer(modifier = Modifier.size(24.dp))
+
+        // ── 软件更新（应用内热更新）──
+        val updateState by com.nightowl.transcriber.pipeline.UpdateManager.state.collectAsState()
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        Group {
+            RowTile(
+                title = "当前版本",
+                subtitle = "v" + com.nightowl.transcriber.BuildConfig.VERSION_NAME,
+                onClick = {}
+            )
+            when (val us = updateState) {
+                is com.nightowl.transcriber.pipeline.UpdateManager.State.Downloading -> {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(
+                            "下载更新 ${us.downloadedMb}MB / ${us.totalMb}MB",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.size(6.dp))
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { us.percent / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                is com.nightowl.transcriber.pipeline.UpdateManager.State.ReadyToInstall -> {
+                    RowTile(
+                        title = "✅ 新版本已就绪",
+                        subtitle = "点击安装 ${us.info.tag}（覆盖安装，模型与记录全部保留）",
+                        onClick = { com.nightowl.transcriber.pipeline.UpdateManager.install(ctx, us.apkFile) }
+                    )
+                }
+                is com.nightowl.transcriber.pipeline.UpdateManager.State.Available -> {
+                    RowTile(
+                        title = "发现新版本 ${us.info.tag}",
+                        subtitle = "APK ${us.info.sizeMb}MB，点击下载安装",
+                        onClick = { scope.launch { com.nightowl.transcriber.pipeline.UpdateManager.download(ctx, us.info) } }
+                    )
+                }
+                is com.nightowl.transcriber.pipeline.UpdateManager.State.Failed -> {
+                    RowTile(
+                        title = "检查更新",
+                        subtitle = "上次失败：${us.reason}，点击重试",
+                        onClick = { scope.launch { com.nightowl.transcriber.pipeline.UpdateManager.check(ctx) } }
+                    )
+                }
+                else -> {
+                    RowTile(
+                        title = if (updateState is com.nightowl.transcriber.pipeline.UpdateManager.State.Checking) "正在检查…" else "检查更新",
+                        subtitle = "自动从 GitHub 拉取最新版本，模型不用重下",
+                        onClick = { scope.launch { com.nightowl.transcriber.pipeline.UpdateManager.check(ctx) } }
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.size(24.dp))
