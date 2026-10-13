@@ -1,5 +1,6 @@
 package com.nightowl.transcriber.ui
 
+import com.nightowl.transcriber.R
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
