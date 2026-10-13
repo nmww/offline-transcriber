@@ -29,6 +29,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -221,6 +224,15 @@ fun SettingsScreen(
             )
         }
 
+        // ── 后台保活引导（解决「应用速冻」杀后台导致转写中断/看不到任务） ──
+        Group {
+            RowTile(
+                title = "后台保活设置",
+                subtitle = "转写为后台任务，若被「应用速冻/电池优化」限制将无法继续；点此前往系统设置允许后台运行",
+                onClick = { openBatterySettings(ctx) }
+            )
+        }
+
         Spacer(modifier = Modifier.size(24.dp))
 
         Group {
@@ -267,6 +279,23 @@ fun SettingsScreen(
                 onClick = {}
             )
         }
+    }
+}
+
+/** 引导用户关闭系统「应用速冻/电池优化」以保活后台转写 */
+private fun openBatterySettings(ctx: android.content.Context) {
+    val pkg = ctx.packageName
+    // 优先请求「忽略电池优化」：授权后系统不再限制后台活动
+    val ignore = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+        data = Uri.parse("package:$pkg")
+    }
+    try {
+        ctx.startActivity(ignore)
+    } catch (_: Throwable) {
+        // 机型不支持则跳应用详情页（在此手动允许后台/自启动）
+        try {
+            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+        } catch (_: Throwable) { }
     }
 }
 

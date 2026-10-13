@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 引导用户关闭系统「应用速冻/电池优化」以保活后台转写 -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 仅用于一次性模型下载（可跳过：也可从电脑拷贝文件手动导入） -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 应用内热更新：下载新 APK 后唤起系统安装器（覆盖安装保留模型与数据） -->

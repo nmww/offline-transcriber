@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.nightowl.transcriber.MainActivity
 import com.nightowl.transcriber.data.ExportFormat
 import com.nightowl.transcriber.data.SettingsStore
+import com.nightowl.transcriber.data.TaskStore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -26,7 +27,7 @@ class TranscribeService : LifecycleService() {
     companion object {
         private const val CHANNEL_ID = "transcribe"
         private const val DONE_CHANNEL_ID = "transcribe_done"
-        private const val NOTI_ID = 1001
+        internal const val NOTI_ID = 1001
         const val EXTRA_URI = "uri"
         const val EXTRA_NAME = "name"
 
@@ -54,6 +55,7 @@ class TranscribeService : LifecycleService() {
         super.onStartCommand(intent, flags, startId) // LifecycleService 必须回传生命周期事件
         val uriStr = intent?.getStringExtra(EXTRA_URI) ?: return START_NOT_STICKY
         val name = intent.getStringExtra(EXTRA_NAME) ?: "未知文件"
+        TaskStore.save(this, uriStr, name)   // 落盘：进程被杀重建后据此恢复/清理
         ensureChannel()
         startForeground(NOTI_ID, buildNotification(name, "准备中…", 0))
 
@@ -72,17 +74,22 @@ class TranscribeService : LifecycleService() {
         return START_NOT_STICKY
     }
 
-    /** 转写结束提醒：完成/失败各一条高优先级通知（点击打开 App 看结果），取消不打扰 */
+    /** 转写结束提醒：完成/失败各一条高优先级通知（点击打开 App 看结果），取消则清掉进度通知 */
     private fun notifyFinished() {
         val st = TranscribeBus.status.value
-        val text = when (st) {
-            is Status.Done -> "「${TranscribeBus.fileName.value}」转写完成，点击查看结果"
-            is Status.Error -> "转写失败：${st.message}"
-            else -> return   // Cancelled / 其他：静默
+        val mgr = getSystemService(NotificationManager::class.java)
+        when (st) {
+            is Status.Done -> showDone("「${TranscribeBus.fileName.value}」转写完成，点击查看结果", false)
+            is Status.Error -> showDone("转写失败：${st.message}", true)
+            else -> mgr.cancel(NOTI_ID)   // Cancelled：清掉进度通知，不再残留僵尸
         }
+        TaskStore.clear(this)   // 任务结束，清除持久状态
+    }
+
+    private fun showDone(text: String, isError: Boolean) {
         runCatching {
             val mgr = getSystemService(NotificationManager::class.java)
-            // 注意：安卓不允许升级已建渠道的优先级，完成提醒必须用独立的新渠道才有横幅/声音
+            // 安卓不允许升级已建渠道的优先级，完成提醒必须用独立的新渠道才有横幅/声音
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 mgr.createNotificationChannel(
                     NotificationChannel(DONE_CHANNEL_ID, "转写完成提醒", NotificationManager.IMPORTANCE_HIGH)
@@ -93,10 +100,7 @@ class TranscribeService : LifecycleService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
             val n = NotificationCompat.Builder(this, DONE_CHANNEL_ID)
-                .setSmallIcon(
-                    if (st is Status.Done) android.R.drawable.stat_sys_download_done
-                    else android.R.drawable.stat_notify_error
-                )
+                .setSmallIcon(if (!isError) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
                 .setContentTitle("盘语")
                 .setContentText(text)
                 .setAutoCancel(true)
@@ -146,6 +150,9 @@ class TranscribeService : LifecycleService() {
 
     override fun onDestroy() {
         job?.cancel()
+        // 兜底清理：正常结束时已在 notifyFinished 清过；此处处理被系统强杀未能走完的情况
+        TaskStore.clear(this)
+        runCatching { getSystemService(NotificationManager::class.java).cancel(NOTI_ID) }
         super.onDestroy()
     }
 }

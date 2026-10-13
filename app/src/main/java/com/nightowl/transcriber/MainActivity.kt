@@ -27,6 +27,7 @@ import androidx.lifecycle.lifecycleScope
 import com.nightowl.transcriber.data.AppDatabase
 import com.nightowl.transcriber.data.ExportFormat
 import com.nightowl.transcriber.data.SettingsStore
+import com.nightowl.transcriber.data.TaskStore
 import com.nightowl.transcriber.engine.ModelManager
 import com.nightowl.transcriber.pipeline.ModelDownloadService
 import com.nightowl.transcriber.pipeline.ModelDownloader
@@ -151,10 +152,23 @@ class MainActivity : ComponentActivity() {
             if (status is Status.Done && screen == Screen.WORKING) screen = Screen.RESULT
         }
 
-        // 进程重建后从通知点回 App：任务仍在跑 → 直接回到转写页（否则在首页看进度卡）
+        // 进程重建后修复「通知栏有转写中、App 里却看不到」的不一致：
+        // TranscribeBus 是内存单例，被系统（如 ColorOS 应用速冻）杀掉重建后归零，
+        // 但前台服务通知是系统级的会残留。这里据磁盘记录判断并清理。
         androidx.compose.runtime.LaunchedEffect(Unit) {
             val st = TranscribeBus.status.value
-            if ((st is Status.Preparing || st is Status.Running) && screen == Screen.HOME) {
+            val task = TaskStore.load(this@MainActivity)
+            val mgr = getSystemService(android.app.NotificationManager::class.java)
+            if (task != null && st is Status.Idle) {
+                // 进程被杀重建过：上次转写已随前台服务一同中断，清理残留
+                TaskStore.clear(this@MainActivity)
+                mgr.cancel(TranscribeService.NOTI_ID)
+                android.widget.Toast.makeText(
+                    this@MainActivity,
+                    "上次转写被系统后台限制中断，建议关闭「应用速冻」以保活（设置 → 后台保活）",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } else if ((st is Status.Preparing || st is Status.Running) && screen == Screen.HOME) {
                 screen = Screen.WORKING
             }
         }
