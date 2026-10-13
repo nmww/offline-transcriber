@@ -1,12 +1,11 @@
 package com.nightowl.transcriber.ui
 
 import com.nightowl.transcriber.R
+import android.graphics.drawable.AnimatedVectorDrawable
+import android.widget.ImageView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.graphics.vector.AnimatedImageVector
-import androidx.compose.animation.graphics.vector.rememberAnimatedVectorPainter
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,10 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,21 +24,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 
 /** 启动动画总时长（ms） */
 private const val SPLASH_MS = 2100
 
 /**
- * 启动页：品牌青渐变底 + 矢量熊猫「逐笔描边」出场（panda_splash_anim 动画资源），
- * 描边画完后名称淡入。矢量绘制，任意分辨率都清晰无锯齿。
+ * 启动页：品牌青渐变底 + 矢量熊猫「逐笔描边」出场（panda_splash_anim 动画资源，
+ * 由 ImageView 加载框架 AnimatedVectorDrawable 并 start() 播放）。
+ * 矢量绘制，任意分辨率都清晰无锯齿。
  */
 @Composable
 fun SplashScreen(onFinish: () -> Unit) {
     val anim = remember { Animatable(0f) }
-    val avd = AnimatedImageVector.animatedVectorResource(R.drawable.panda_splash_anim)
-    var atEnd by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        atEnd = true
         anim.animateTo(1f, tween(SPLASH_MS, easing = LinearEasing))
         onFinish()
     }
@@ -56,10 +51,15 @@ fun SplashScreen(onFinish: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Image(
-                painter = avd.rememberAnimatedVectorPainter(atEnd),
-                contentDescription = "盘语",
-                modifier = Modifier.size(220.dp)
+            AndroidView(
+                modifier = Modifier.size(220.dp),
+                factory = { ctx ->
+                    val iv = ImageView(ctx)
+                    val d = ctx.getDrawable(R.drawable.panda_splash_anim)
+                    iv.setImageDrawable(d)
+                    (d as? AnimatedVectorDrawable)?.start()
+                    iv
+                }
             )
             Spacer(Modifier.height(8.dp))
             Text(
