@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -85,7 +86,7 @@ fun SplashScreen(onFinish: () -> Unit) {
 /** 单位空间（中心 0、半径 1）下的椭圆路径，可旋转 */
 private fun unitEllipse(cx: Float, cy: Float, rx: Float, ry: Float, rotDeg: Float = 0f): Path {
     val p = Path()
-    p.addOval(RectF(cx - rx, cy - ry, cx + rx, cy + ry))
+    p.addOval(RectF(cx - rx, cy - ry, cx + rx, cy + ry), Path.Direction.CW)
     if (rotDeg != 0f) {
         val m = Matrix()
         m.postRotate(rotDeg, cx, cy)
