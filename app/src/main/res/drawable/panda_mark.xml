@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 熊猫标志（矢量，单一真源）：白描边 + 深青五官，透明底。
+     与 /Users/cc/Pictures/exported_image.svg 几何一致，任意尺寸清晰无锯齿。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="400"
+    android:viewportHeight="400">
+    <group android:translateX="200" android:translateY="200">
+        <!-- 左耳 -->
+        <path
+            android:pathData="M -122,-80 a 32,32 0 1,0 64,0 a 32,32 0 1,0 -64,0 Z"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="14"
+            android:strokeLineCap="round" />
+        <!-- 右耳 -->
+        <path
+            android:pathData="M 58,-80 a 32,32 0 1,0 64,0 a 32,32 0 1,0 -64,0 Z"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="14"
+            android:strokeLineCap="round" />
+        <!-- 头部外圈 -->
+        <path
+            android:pathData="M -110,0 a 110,110 0 1,0 220,0 a 110,110 0 1,0 -220,0 Z"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="14"
+            android:strokeLineCap="round" />
+        <!-- 左眼外圈 -->
+        <path
+            android:pathData="M -83,-15 a 38,38 0 1,0 76,0 a 38,38 0 1,0 -76,0 Z"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="14"
+            android:strokeLineCap="round" />
+        <!-- 右眼外圈 -->
+        <path
+            android:pathData="M 7,-15 a 38,38 0 1,0 76,0 a 38,38 0 1,0 -76,0 Z"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="14"
+            android:strokeLineCap="round" />
+        <!-- 左眼瞳孔 -->
+        <path
+            android:pathData="M -57,-15 a 12,12 0 1,0 24,0 a 12,12 0 1,0 -24,0 Z"
+            android:fillColor="#005550" />
+        <!-- 右眼瞳孔 -->
+        <path
+            android:pathData="M 33,-15 a 12,12 0 1,0 24,0 a 12,12 0 1,0 -24,0 Z"
+            android:fillColor="#005550" />
+        <!-- 鼻子 -->
+        <path
+            android:pathData="M -9,25 a 9,9 0 1,0 18,0 a 9,9 0 1,0 -18,0 Z"
+            android:fillColor="#005550" />
+        <!-- 微笑嘴巴 -->
+        <path
+            android:pathData="M -30,50 Q 0,75 30,50"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="14"
+            android:strokeLineCap="round" />
+    </group>
+</vector>
